@@ -15,6 +15,15 @@
 /** @brief Valore usato per indicare "nessun ID" (es. nessuna destinazione/provenienza). */
 #define ID_NONE "NULL"
 
+/** @brief Priorità minima ammessa per un oggetto. */
+#define PRIORITY_MIN 0
+
+/** @brief Priorità massima ammessa per un oggetto. */
+#define PRIORITY_MAX 10
+
+/** @brief Valore di stepOut quando l'oggetto non è ancora uscito dalla linea. */
+#define STEP_OUT_NONE -1
+
 /* ------------------------------------------------------------------ */
 /*  STRUCT                                                             */
 /* ------------------------------------------------------------------ */
@@ -26,11 +35,11 @@
  */
 typedef struct {
     char ID[IDLENGTH];     /**< ID dell'oggetto. */
-    short int priority;     /**< priorità dell'oggetto. */
+    short int priority;     /**< priorità dell'oggetto, vedi PRIORITY_MIN/PRIORITY_MAX. */
     char type;      /**< tipologia: A = acciaio, B = rame. */
     char ID_LOCATION[IDLENGTH];  /**< ID della locazione corrente. */
     int stepCreation;           /**< Step temporale all'entrata della linea. */
-    int stepOut;           /**< step temporale all'uscita della linea. */
+    int stepOut;           /**< step temporale all'uscita della linea, STEP_OUT_NONE se non ancora uscito. */
     double dimensionX;   /**< Dimensione oggetto fittizia. */
 } object_t;
 
@@ -41,13 +50,16 @@ typedef struct {
 /**
  * @brief creazione oggetto.
  * @param Obj_ID id dell'oggetto creato.
- * @param Obj_priority priorità dell'oggetto creato, 10 massima priorità.
+ * @param Obj_priority priorità dell'oggetto creato, deve essere compresa tra PRIORITY_MIN e PRIORITY_MAX (10 = massima priorità).
  * @param Obj_type tipologia oggetto: A = acciaio, B = rame.
  * @param step step temporale in cui l'oggetto viene creato.
- * @param Obj_dimensionX dimensione fittizia alla creazione.
- * @return puntatore all'oggetto creato, NULL se malloc fallisce.
+ * @param Obj_dimensionX dimensione fittizia alla creazione (deve essere >= 0).
+ * @param errCode puntatore opzionale (può essere NULL) in cui viene scritto OP_SUCCESS
+ *        oppure un codice ERR_* (vedi errors.h) che spiega perché la creazione è fallita
+ *        (ERR_NULL_PTR, ERR_ID_INVALID, ERR_OUT_OF_RANGE, ERR_ALLOC).
+ * @return puntatore all'oggetto creato, o NULL in caso di errore (vedi *errCode per il motivo).
  */
-object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_type, int step, double Obj_dimensionX );
+object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_type, int step, double Obj_dimensionX, short int *errCode );
 
 /**
  * @brief cambia la posizione dell'oggetto.
@@ -78,50 +90,63 @@ short int object_setDimensionX( object_t *Obj, double newDimension );
 
 /**
  * @brief Restituisce la priorità dell'oggetto.
+ *
+ * La priorità di un oggetto valido è sempre compresa tra PRIORITY_MIN e
+ * PRIORITY_MAX (quindi >= 0): questo rende ERR_NULL_PTR (-1) un valore
+ * di ritorno inequivocabile per il caso di errore.
  * @param Obj puntatore all'oggetto.
- * @return Priorità dell'oggetto.
+ * @return Priorità dell'oggetto, oppure ERR_NULL_PTR se Obj è NULL.
  */
 short int object_getPriority( const object_t *Obj );
 
 /**
  * @brief Restituisce l'ID della location corrente dell'oggetto.
  * @param Obj puntatore all'oggetto.
- * @return Puntatore costante alla stringa ID.
+ * @return Puntatore costante alla stringa ID_LOCATION, oppure NULL se Obj è NULL.
+ *         Se all'oggetto non è ancora stata assegnata una locazione, la stringa
+ *         restituita contiene il valore sentinella ID_NONE ("NULL") — da non
+ *         confondere con il puntatore NULL restituito quando Obj stesso è NULL.
  */
 const char *object_getLocation( const object_t *Obj );
 
 /**
  * @brief Restituisce il tipo dell'oggetto.
+ *
+ * Il tipo è un char, non un puntatore: non può quindi restituire il
+ * puntatore NULL. Il valore di errore usato quando Obj è NULL è il
+ * carattere nullo '\0', che non è mai un tipo valido (i tipi validi
+ * sono 'A' e 'B').
  * @param Obj puntatore all'oggetto.
- * @return Tipo dell'oggetto.
+ * @return Tipo dell'oggetto ('A' o 'B'), oppure '\0' se Obj è NULL.
  */
 char object_getType( const object_t *Obj );
 
 /**
  * @brief Restituisce l'ID dell'oggetto.
  * @param Obj puntatore all'oggetto.
- * @return Puntatore costante alla stringa ID.
+ * @return Puntatore costante alla stringa ID, oppure NULL se Obj è NULL.
  */
 const char *object_getID( const object_t *Obj );
 
 /**
  * @brief Step temporale in cui l'oggetto è entrato nella linea.
  * @param Obj puntatore all'oggetto.
- * @return step di creazione.
+ * @return step di creazione (sempre >= 0), oppure ERR_NULL_PTR se Obj è NULL.
  */
 int object_getStepCreation( const object_t *Obj );
 
 /**
  * @brief Step temporale in cui l'oggetto è uscito dalla linea.
  * @param Obj puntatore all'oggetto.
- * @return step di uscita (valore non ancora significativo se l'oggetto non è uscito).
+ * @return step di uscita (>= 0 se l'oggetto è uscito, STEP_OUT_NONE se non
+ *         ancora uscito), oppure ERR_NULL_PTR se Obj è NULL.
  */
 int object_getStepOut( const object_t *Obj );
 
 /**
  * @brief Dimensione fittizia corrente dell'oggetto.
  * @param Obj puntatore all'oggetto.
- * @return valore di dimensionX.
+ * @return valore di dimensionX (sempre >= 0), oppure ERR_NULL_PTR se Obj è NULL.
  */
 double object_getDimensionX( const object_t *Obj );
 

@@ -2,7 +2,9 @@
  * @file errors.h
  * @brief Codici di ritorno condivisi tra i moduli del progetto.
  *
- * Aggiungere nuovi ERR_* qui man mano che emergono nuovi
+ * Usare questi codici come valore di ritorno per le funzioni short int/int
+ * che segnalano successo o un errore specifico, invece di valori "magici"
+ * sparsi nel codice. Aggiungere nuovi ERR_* qui man mano che emergono nuovi
  * casi da distinguere, senza toccare le firme delle funzioni esistenti.
  */
 
@@ -32,5 +34,11 @@
 
 /** @brief Valore fuori dal range accettabile (es. capacità <= 0). */
 #define ERR_OUT_OF_RANGE -7
+
+/** @brief Operazione non ancora supportata (es. tipo di entità non ancora implementato). */
+#define ERR_NOT_SUPPORTED -8
+
+/** @brief ID valido ma già presente (es. inserimento duplicato). */
+#define ERR_DUPLICATE -9
 
 #endif /* ERRORS_H */
