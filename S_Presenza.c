@@ -1,68 +1,69 @@
 #include <stdlib.h>
+#include <string.h>
 #include "S_Presenza.h"
+#include "errors.h"
 
-void sensore_presenza_init(SensorePresenza *s, int ID)
+int sensore_presenza_init(SensorePresenza *s, const char *ID)
 {
-    if (s == NULL) return;
-    s->status_precedente = 0;
-    s->status_corrente = 0;
+    if (s == NULL || ID == NULL) return ERR_NULL_PTR;
+    if (strlen(ID) > sizeof(s->ID) - 1) return ERR_ID_INVALID;
+
+    s->status_precedente = false;
+    s->status_corrente = false;
     s->letture_totali = 0;
     s->rilevamenti_totali = 0;
-    s -> ID = ID; 
+
+    /* s->ID e' un array: va copiato con strncpy, non assegnato con '=' */
+    strncpy(s->ID, ID, sizeof(s->ID) - 1);
+    s->ID[sizeof(s->ID) - 1] = '\0';
+
+    return 0;
 }
 
-int get_status(SensorePresenza *s, int time_on, int presenza)
+int get_status_presenza(SensorePresenza *s, int time_on, int presenza)
 {
-    if (s == NULL) return;
+    int presente;
     int fronte_di_salita;
     int fronte_di_discesa;
-    int tempo_atteso = 2;
+    const int tempo_atteso = 2;
+
+    if (s == NULL) return ERR_NULL_PTR;
+
     s->letture_totali++;
 
-    if((time_on >= tempo_atteso) || presenza == 1){ //presenza è un input esterno, time_on verra probabilmente tolto in futuro
-        presente = 1;
-    } else {
-        presente = 0;
-    }
-    
-    fronte_di_salita = (presente == 1 && s->status_precedente == 0);
+    /* presente e' vero se il timer di persistenza ha superato la soglia
+     * OPPURE se il segnale diretto di presenza e' attivo.
+     * (era 'presente' non dichiarata nella versione originale: refuso
+     * del parametro 'presenza') */
+    presente = (time_on >= tempo_atteso) || (presenza == 1);
+
+    fronte_di_salita  = (presente == 1 && s->status_precedente == 0);
     fronte_di_discesa = (presente == 0 && s->status_precedente == 1);
-    
+
+    s->status_precedente = presente;
+    s->status_corrente   = presente;
+
     if (fronte_di_salita) {
         s->rilevamenti_totali++;
-        s -> status_corrente = 1;
-        s->status_precedente = presente;
         return ENTRATA;
     }
-
-     if (fronte_di_discesa) {
-        s->status_precedente = presente;
-        s -> status_corrente = 0;
+    if (fronte_di_discesa) {
         return USCITA;
     }
-    
-    if(presente == 1 && s->status_precedente == 1){
-        s->status_precedente = presente;
-        s -> status_corrente = 1;
+    if (presente) {
         return PRESENZA_PROLUNGATA;
     }
-
-    if(presente == 0 && s->status_precedente == 0){
-        s->status_precedente = presente;
-        s -> status_corrente = 0;
-        return ASSENZA_PROLUNGATA;
-    }
-   
+    return ASSENZA_PROLUNGATA;
 }
 
-int get_letture_totali(SensorePresenza *s)
+long get_letture_totali_presenza(const SensorePresenza *s)
 {
-    if (s == NULL) return;
+    if (s == NULL) return ERR_NULL_PTR;
     return s->letture_totali;
 }
 
-int get_rilevamenti_totali(SensorePresenza *s)
+long get_rilevamenti_totali_presenza(const SensorePresenza *s)
 {
-    if (s == NULL) return;
+    if (s == NULL) return ERR_NULL_PTR;
     return s->rilevamenti_totali;
 }
