@@ -138,6 +138,36 @@ buffer_t *registry_getBuffer( const char *ID )
     return (buffer_t *) registry_getIfType( ID, ENTITY_BUFFER );
 }
 
+nastro_t *registry_getNastro( const char *ID )
+{
+    return (nastro_t *) registry_getIfType( ID, ENTITY_NASTRO );
+}
+
+SensoreBuffer *registry_getSensoreBuffer( const char *ID )
+{
+    return (SensoreBuffer *) registry_getIfType( ID, ENTITY_SENSOR_BUFFER );
+}
+
+SensorePresenza *registry_getSensorePresenza( const char *ID )
+{
+    return (SensorePresenza *) registry_getIfType( ID, ENTITY_SENSOR_PRESENZA );
+}
+
+SensoreQualita *registry_getSensoreQualita( const char *ID )
+{
+    return (SensoreQualita *) registry_getIfType( ID, ENTITY_SENSOR_QUALITA );
+}
+
+Motore *registry_getMotore( const char *ID )
+{
+    return (Motore *) registry_getIfType( ID, ENTITY_ACTUATOR_MOTORE );
+}
+
+Deviatore *registry_getDeviatore( const char *ID )
+{
+    return (Deviatore *) registry_getIfType( ID, ENTITY_ACTUATOR_DEVIATORE );
+}
+
 void registry_clear( void )
 {
     registryEntry_t *cur;

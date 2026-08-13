@@ -53,6 +53,8 @@ buffer_t *buffer_create( const char *ID, const int capacity, short int *errCode 
     buffer->tail = NULL;
     buffer->inputList = NULL;
     buffer->outputList = NULL;
+    buffer->sensorList = NULL;
+    buffer->actuatorList = NULL;
 
     if ( errCode != NULL ) {
         *errCode = OP_SUCCESS;
@@ -81,6 +83,8 @@ void buffer_delete( buffer_t *buffer )
 
     idlist_free( buffer->inputList );
     idlist_free( buffer->outputList );
+    idlist_free( buffer->sensorList );
+    idlist_free( buffer->actuatorList );
 
     free( buffer );
 }
@@ -199,6 +203,70 @@ bool buffer_hasOutput( const buffer_t *buffer, const char *ID )
         return false;
     }
     return idlist_contains( buffer->outputList, ID );
+}
+
+short int buffer_addSensor( buffer_t *buffer, const char *ID )
+{
+    if ( buffer == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    return idlist_add( &buffer->sensorList, ID );
+}
+
+int buffer_getSensorCount( const buffer_t *buffer )
+{
+    if ( buffer == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    return idlist_count( buffer->sensorList );
+}
+
+short int buffer_getSensorAt( const buffer_t *buffer, int index, char outID[IDLENGTH] )
+{
+    if ( buffer == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    return idlist_getAt( buffer->sensorList, index, outID );
+}
+
+bool buffer_hasSensor( const buffer_t *buffer, const char *ID )
+{
+    if ( buffer == NULL ) {
+        return false;
+    }
+    return idlist_contains( buffer->sensorList, ID );
+}
+
+short int buffer_addActuator( buffer_t *buffer, const char *ID )
+{
+    if ( buffer == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    return idlist_add( &buffer->actuatorList, ID );
+}
+
+int buffer_getActuatorCount( const buffer_t *buffer )
+{
+    if ( buffer == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    return idlist_count( buffer->actuatorList );
+}
+
+short int buffer_getActuatorAt( const buffer_t *buffer, int index, char outID[IDLENGTH] )
+{
+    if ( buffer == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    return idlist_getAt( buffer->actuatorList, index, outID );
+}
+
+bool buffer_hasActuator( const buffer_t *buffer, const char *ID )
+{
+    if ( buffer == NULL ) {
+        return false;
+    }
+    return idlist_contains( buffer->actuatorList, ID );
 }
 
 /* ------------------------------------------------------------------ */
@@ -338,6 +406,28 @@ void buffer_print( const buffer_t *buffer )
 
     printf( "  output: " );
     idCur = buffer->outputList;
+    if ( idCur == NULL ) {
+        printf( "(nessuno)" );
+    }
+    while ( idCur != NULL ) {
+        printf( "%s ", idCur->ID );
+        idCur = idCur->next;
+    }
+    printf( "\n" );
+
+    printf( "  sensori: " );
+    idCur = buffer->sensorList;
+    if ( idCur == NULL ) {
+        printf( "(nessuno)" );
+    }
+    while ( idCur != NULL ) {
+        printf( "%s ", idCur->ID );
+        idCur = idCur->next;
+    }
+    printf( "\n" );
+
+    printf( "  attuatori: " );
+    idCur = buffer->actuatorList;
     if ( idCur == NULL ) {
         printf( "(nessuno)" );
     }

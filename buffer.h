@@ -34,6 +34,8 @@ typedef struct {
     struct bufferObj *tail;           /**< Puntatore all'ultimo oggetto nel buffer. */
     idNode_t *inputList;     /**< ID dei macchinari collegati in ingresso (vuota se nessuno). */
     idNode_t *outputList;    /**< ID dei macchinari collegati in uscita (vuota se nessuno). */
+    idNode_t *sensorList;     /**< ID dei sensori collegati a questo buffer (vuota se nessuno). */
+    idNode_t *actuatorList;   /**< ID degli attuatori collegati a questo buffer (vuota se nessuno). */
 } buffer_t;
 
 /**
@@ -180,6 +182,72 @@ short int buffer_getOutputAt( const buffer_t *buffer, int index, char outID[IDLE
  * @return true se presente, false altrimenti (anche se buffer è NULL).
  */
 bool buffer_hasOutput( const buffer_t *buffer, const char *ID );
+
+/**
+ * @brief Aggiunge un sensore collegato a questo buffer.
+ * @param buffer Puntatore al buffer.
+ * @param ID ID del sensore da aggiungere.
+ * @return OP_SUCCESS se aggiunto, ERR_DUPLICATE se l'ID è già presente,
+ *         un altro codice ERR_* (vedi errors.h) per altri errori.
+ */
+short int buffer_addSensor( buffer_t *buffer, const char *ID );
+
+/**
+ * @brief Numero di sensori collegati al buffer.
+ * @param buffer Puntatore al buffer.
+ * @return Numero di sensori (sempre >= 0), oppure ERR_NULL_PTR se buffer è NULL.
+ */
+int buffer_getSensorCount( const buffer_t *buffer );
+
+/**
+ * @brief Legge l'ID del sensore all'indice indicato (0-based), copiandolo in outID.
+ * @param buffer Puntatore al buffer.
+ * @param index Indice del sensore richiesto (0 = primo).
+ * @param outID Buffer di dimensione almeno IDLENGTH in cui viene copiato l'ID.
+ * @return OP_SUCCESS se trovato, un codice ERR_* (vedi errors.h) altrimenti.
+ */
+short int buffer_getSensorAt( const buffer_t *buffer, int index, char outID[IDLENGTH] );
+
+/**
+ * @brief Controlla se un dato ID è tra i sensori collegati al buffer.
+ * @param buffer Puntatore al buffer.
+ * @param ID ID cercato.
+ * @return true se presente, false altrimenti (anche se buffer è NULL).
+ */
+bool buffer_hasSensor( const buffer_t *buffer, const char *ID );
+
+/**
+ * @brief Aggiunge un attuatore collegato a questo buffer.
+ * @param buffer Puntatore al buffer.
+ * @param ID ID dell'attuatore da aggiungere.
+ * @return OP_SUCCESS se aggiunto, ERR_DUPLICATE se l'ID è già presente,
+ *         un altro codice ERR_* (vedi errors.h) per altri errori.
+ */
+short int buffer_addActuator( buffer_t *buffer, const char *ID );
+
+/**
+ * @brief Numero di attuatori collegati al buffer.
+ * @param buffer Puntatore al buffer.
+ * @return Numero di attuatori (sempre >= 0), oppure ERR_NULL_PTR se buffer è NULL.
+ */
+int buffer_getActuatorCount( const buffer_t *buffer );
+
+/**
+ * @brief Legge l'ID dell'attuatore all'indice indicato (0-based), copiandolo in outID.
+ * @param buffer Puntatore al buffer.
+ * @param index Indice dell'attuatore richiesto (0 = primo).
+ * @param outID Buffer di dimensione almeno IDLENGTH in cui viene copiato l'ID.
+ * @return OP_SUCCESS se trovato, un codice ERR_* (vedi errors.h) altrimenti.
+ */
+short int buffer_getActuatorAt( const buffer_t *buffer, int index, char outID[IDLENGTH] );
+
+/**
+ * @brief Controlla se un dato ID è tra gli attuatori collegati al buffer.
+ * @param buffer Puntatore al buffer.
+ * @param ID ID cercato.
+ * @return true se presente, false altrimenti (anche se buffer è NULL).
+ */
+bool buffer_hasActuator( const buffer_t *buffer, const char *ID );
 
 /**
  * @brief Inserisce un oggetto nel buffer.
