@@ -22,16 +22,38 @@
 #include "object.h"   /* IDLENGTH */
 #include "errors.h"
 #include "buffer.h"
+#include "nastro.h"
+
+/* Header dei moduli di Simone: servono solo per i tipi (SensoreBuffer,
+ * Motore, ecc.) usati dai getter tipizzati sotto. registry.c non ha
+ * altre dipendenze da quei moduli. Vanno nel path di include del
+ * progetto (es. lib/Sensori/.../include, lib/Attuatori/.../include). */
+#include "S_Buffer.h"
+#include "S_Presenza.h"
+#include "S_Qualita.h"
+#include "Motore.h"
+#include "Deviatore.h"
 
 /**
- * @brief Tipo di entità registrata. Aggiungere qui i nuovi tipi
- *        (machine, isp, sensor) quando le relative struct saranno pronte.
+ * @brief Tipo di entità registrata.
+ *
+ * ENTITY_MACHINE/ENTITY_ISP/ENTITY_NASTRO sono entità di trasporto o
+ * lavorazione allo stesso livello di ENTITY_BUFFER nella topologia
+ * della cella (si collegano con cell_connect); le ENTITY_SENSOR_x e
+ * ENTITY_ACTUATOR_x invece si "agganciano" a un buffer già esistente
+ * (con cell_attachSensor/cell_attachActuator), non fanno parte della
+ * topologia dei collegamenti.
  */
 typedef enum {
     ENTITY_BUFFER,
     ENTITY_MACHINE,
     ENTITY_ISP,
-    ENTITY_SENSOR
+    ENTITY_NASTRO,               /* placeholder, struct non ancora scritta */
+    ENTITY_SENSOR_BUFFER,
+    ENTITY_SENSOR_PRESENZA,
+    ENTITY_SENSOR_QUALITA,
+    ENTITY_ACTUATOR_MOTORE,
+    ENTITY_ACTUATOR_DEVIATORE
 } entity_type_t;
 
 /**
@@ -74,13 +96,51 @@ short int registry_getType( const char *ID, entity_type_t *outType );
  */
 buffer_t *registry_getBuffer( const char *ID );
 
-/* Quando esisteranno machine_t/isp_t/sensor_t, aggiungere qui le
- * rispettive funzioni tipizzate, sullo stesso modello:
- *
- * machine_t *registry_getMachine( const char *ID );
- * isp_t *registry_getISP( const char *ID );
- * sensor_t *registry_getSensor( const char *ID );
+/**
+ * @brief Restituisce il nastro trasportatore con l'ID indicato.
+ * @param ID Identificativo cercato.
+ * @return Puntatore al nastro_t, oppure NULL se l'ID non è registrato
+ *         o corrisponde a un'entità di un tipo diverso da ENTITY_NASTRO.
  */
+nastro_t *registry_getNastro( const char *ID );
+
+/**
+ * @brief Restituisce il sensore di livello buffer con l'ID indicato.
+ * @param ID Identificativo cercato.
+ * @return Puntatore, oppure NULL se non registrato o di un altro tipo.
+ */
+SensoreBuffer *registry_getSensoreBuffer( const char *ID );
+
+/**
+ * @brief Restituisce il sensore di presenza con l'ID indicato.
+ * @param ID Identificativo cercato.
+ * @return Puntatore, oppure NULL se non registrato o di un altro tipo.
+ */
+SensorePresenza *registry_getSensorePresenza( const char *ID );
+
+/**
+ * @brief Restituisce il sensore di qualità con l'ID indicato.
+ * @param ID Identificativo cercato.
+ * @return Puntatore, oppure NULL se non registrato o di un altro tipo.
+ */
+SensoreQualita *registry_getSensoreQualita( const char *ID );
+
+/**
+ * @brief Restituisce il motore con l'ID indicato.
+ * @param ID Identificativo cercato.
+ * @return Puntatore, oppure NULL se non registrato o di un altro tipo.
+ */
+Motore *registry_getMotore( const char *ID );
+
+/**
+ * @brief Restituisce il deviatore con l'ID indicato.
+ * @param ID Identificativo cercato.
+ * @return Puntatore, oppure NULL se non registrato o di un altro tipo.
+ */
+Deviatore *registry_getDeviatore( const char *ID );
+
+/* Quando esisteranno machine_t/isp_t/nastro_t, aggiungere qui le
+ * rispettive funzioni tipizzate, sullo stesso modello. */
 
 /**
  * @brief Svuota il registro.
