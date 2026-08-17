@@ -3,6 +3,7 @@
 #include "S_Qualita.h"
 #include "errors.h"
 #include "object.h"
+#include <math.h>
 
 int sensore_qualita_init(SensoreQualita *s, const char *ID,
                           MalfunzionamentoSensore *m,
@@ -10,7 +11,7 @@ int sensore_qualita_init(SensoreQualita *s, const char *ID,
                           const int dimensionX_target,
                           const int raggio_target )
 {
-    if (s == NULL || m == NULL || ID == NULL || target == NULL) return ERR_NULL_PTR;
+    if (s == NULL || m == NULL || ID == NULL ) return ERR_NULL_PTR;
     if (strlen(ID) > sizeof(s->ID) - 1) return ERR_ID_INVALID;
 
     strncpy(s->ID, ID, sizeof(s->ID) - 1);
@@ -81,15 +82,15 @@ char get_Material(object_t *object, const SensoreQualita *s)
     if (s == NULL || object == NULL) return ERR_NULL_PTR;
     
     float densita[2] = {8.96 , 7.85};
-    float ConfrontoA = (float)(((object -> dimensionX)*(object -> raggio)^2)*3.14 * densita[0]);
-    float ConfrontoB = (float)(((object -> dimensionX)*(object -> raggio)^2)*3.14 * densita[1]);
+    float ConfrontoA = (float)(((object -> dimensionX)*(object -> raggio)*(object -> raggio))*3.14 * densita[0]);
+    float ConfrontoB = (float)(((object -> dimensionX)*(object -> raggio)*(object -> raggio))*3.14 * densita[1]);
     float materiale;
     float e;
     int p=5;
-    if (object -> type == "A") {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)^2)*3.14 * densita[0]); e = 100*p/materiale;}
-    if (object -> type == "B") {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)^2)*3.14 * densita[1]); e = 100*p/materiale;}
-    if((materiale - e)<= ConfrontoA <= (materiale + e)){ return "A";}
-    else if((materiale - e)<= ConfrontoB <= (materiale + e)){return "B";}
+    if (object -> type == 'A') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[0]); e = 100*p/materiale;}
+    if (object -> type == 'B') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[1]); e = 100*p/materiale;}
+    if((materiale - e)<= ConfrontoA && ConfrontoA <= (materiale + e)){ return 'A';}
+    else if((materiale - e)<= ConfrontoB && ConfrontoB <= (materiale + e)){return 'B';}
     else {return 0;}
 }
 
@@ -115,17 +116,17 @@ int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
     }
 
 if(s->status == QUALITA_OK){
-    if (s->dimensionX_target == 0 || s->raggio_target ) return ERR_NOT_SUPPORTED; /* target non configurato per questo materiale */
+    if (s->dimensionX_target == 0 || s->raggio_target == 0 ) return ERR_NOT_SUPPORTED; /* target non configurato per questo materiale */
 
-    percentualeX = abs(object->dimensionX - s->dimensionX_target) * 100 /s->dimensionX_target;
-    percentualeR = abs(object->raggio - s->raggio_target) * 100 /s->raggio_target;
-    if (percentualeX <= 5 ) {
+    percentualeX = fabs(object->dimensionX - s->dimensionX_target) * 100 /s->dimensionX_target;
+    percentualeR = fabs(object->raggio - s->raggio_target) * 100 /s->raggio_target;
+    if (percentualeX <= 5 && percentualeR <= 5  ) {
         s->risultato_ultima_lettura = CONFORME;
     } 
-     else if ((percentualeX && percentualeR) <= 10 ) {
+     else if (percentualeX <= 10 && percentualeR <= 10 ) {
         s->risultato_ultima_lettura = RIVALUTAZIONE;
     } 
-    else if ((percentualeX && percentualeR) <= 100){
+    else if (percentualeX <= 100 && percentualeR <= 100){
         s->risultato_ultima_lettura = SCARTO;
     }else{return ERR_NOT_SUPPORTED;}
 
