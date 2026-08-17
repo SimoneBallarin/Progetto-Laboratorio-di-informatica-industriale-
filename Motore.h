@@ -1,6 +1,6 @@
 #ifndef MOTORE_H
 #define MOTORE_H
-
+#include "object.h"
 #include <stdbool.h>
 
 /* Rinominati da 'ON'/'OFF' generici (che collidevano con l'enum omonimo
@@ -16,7 +16,7 @@ typedef enum {
 } MotoreStatus;
 
 typedef struct { /* struttura per rappresentare un motore */
-    char ID[20];
+    char ID[IDLENGTH];
     int  velocita_target;
     int  velocita_attuale;
     int  acc;                  /* accelerazione del motore (unita' di velocita' al secondo) */
@@ -52,7 +52,7 @@ typedef struct { /* struttura per tenere traccia degli errori del motore */
  * funzioni "getter" che restituiscono bool non possono restituire un
  * codice di errore distinguibile: su puntatore NULL restituiscono false. */
 
-int  motore_init(Motore *m, const char *ID, int velocita_target);
+int  motore_init(Motore *m, const char *ID, int velocita_target, int accelerazione_desiderata);
 
 /* Avanza lo stato del motore di un passo di simulazione: aggiorna
  * accensione/spegnimento, i tempi in MotorTime, la rampa di velocita'

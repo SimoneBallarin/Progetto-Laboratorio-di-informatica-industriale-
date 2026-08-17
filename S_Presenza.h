@@ -1,12 +1,12 @@
 #ifndef S_PRESENZA_H
 #define S_PRESENZA_H
-
+#include "object.h"
 #include <stdbool.h>
 
 typedef struct {
     bool status_precedente;
     bool status_corrente;
-    char ID[20];
+    char ID[IDLENGTH];
     long letture_totali;
     long rilevamenti_totali; /* numero di fronti di salita (ENTRATA) rilevati */
 } SensorePresenza;

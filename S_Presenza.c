@@ -17,7 +17,7 @@ int sensore_presenza_init(SensorePresenza *s, const char *ID)
     strncpy(s->ID, ID, sizeof(s->ID) - 1);
     s->ID[sizeof(s->ID) - 1] = '\0';
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int get_status_presenza(SensorePresenza *s, int time_on, int presenza)

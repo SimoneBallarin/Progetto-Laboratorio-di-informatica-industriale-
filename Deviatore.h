@@ -1,6 +1,6 @@
 #ifndef DEVIATORE_H
 #define DEVIATORE_H
-
+#include "object.h"
 #include <stdbool.h>
 
 /* Rinominati per evitare collisioni con gli enum generici di Motore.h
@@ -19,7 +19,7 @@ typedef enum {
 } PosizioneDeviatore;
 
 typedef struct { /* struttura per rappresentare un deviatore */
-    char ID[20];
+    char ID[IDLENGTH];
     int  posizione_target;
     int  posizione_attuale;
     StatoDeviatore status;

@@ -16,7 +16,7 @@ int deviatore_init(Deviatore *d, const char *ID)
     d->status_precedente = DEVIATORE_OFF;
     d->inPosizione = POSIZIONE_OK;
 
-    return 0;
+    return 1;
 }
 
 int deviatoretime_init(DeviatoreTime *dt, int tempo_minimo_tra_commutazioni)
@@ -28,7 +28,7 @@ int deviatoretime_init(DeviatoreTime *dt, int tempo_minimo_tra_commutazioni)
     dt->tempo_minimo_tra_commutazioni = tempo_minimo_tra_commutazioni;
     dt->prima_commutazione_fatta = false;
 
-    return 0;
+    return 1;
 }
 
 int set_deviatore(Deviatore *d, StatoDeviatore stato)
@@ -38,7 +38,7 @@ int set_deviatore(Deviatore *d, StatoDeviatore stato)
     d->status_precedente = d->status;
     d->status = stato;
 
-    return 0;
+    return 1;
 }
 
 int deviatore_imposta_target(Deviatore *d, DeviatoreTime *dt,
@@ -47,7 +47,7 @@ int deviatore_imposta_target(Deviatore *d, DeviatoreTime *dt,
     if (d == NULL || dt == NULL) return ERR_NULL_PTR;
 
     if (nuova_posizione_target == d->posizione_target) {
-        return 0; /* nessuna commutazione richiesta */
+        return 1; /* nessuna commutazione richiesta */
     }
 
     if (dt->prima_commutazione_fatta &&
@@ -60,7 +60,7 @@ int deviatore_imposta_target(Deviatore *d, DeviatoreTime *dt,
     dt->time_last_commutazione = time_globale;
     dt->prima_commutazione_fatta = true;
 
-    return 0;
+    return 1;
 }
 
 int posizionamento_deviatore(Deviatore *d)
@@ -68,15 +68,12 @@ int posizionamento_deviatore(Deviatore *d)
     if (d == NULL) return ERR_NULL_PTR;
 
     if (d->status != DEVIATORE_ON) {
-        return 0; /* deviatore spento: nessun movimento */
+        return 1; /* deviatore spento: nessun movimento */
     }
 
-    /* Bug originale: 'target' non era mai dichiarato (doveva essere
-     * d->posizione_target) - non compilava. */
+
     if (d->posizione_attuale < d->posizione_target) {
-        /* Bug originale: 'd->posizione_attuale = d->posizione_attuale++;'
-         * e' comportamento indefinito in C (stessa variabile modificata
-         * e usata nella stessa espressione, senza punto di sequenza). */
+
         d->posizione_attuale++;
         d->inPosizione = POSIZIONE_NOT_OK;
     } else if (d->posizione_attuale > d->posizione_target) {
@@ -84,15 +81,11 @@ int posizionamento_deviatore(Deviatore *d)
         d->inPosizione = POSIZIONE_NOT_OK;
     }
 
-    /* Bug originale: 'if (d->posizione_attuale = target)' usava '='
-     * (assegnazione) invece di '==' (confronto): assegnava sempre il
-     * target alla posizione attuale, saltando il movimento graduale e
-     * segnando sempre "in posizione" a prescindere dallo stato reale. */
     if (d->posizione_attuale == d->posizione_target) {
         d->inPosizione = POSIZIONE_OK;
     }
 
-    return 0;
+    return 1;
 }
 
 bool get_status_deviatore(const Deviatore *d)
