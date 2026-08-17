@@ -116,7 +116,7 @@ int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
     }
 
 if(s->status == QUALITA_OK){
-    if (s->dimensionX_target == 0 || s->raggio_target == 0 ) return ERR_NOT_SUPPORTED; /* target non configurato per questo materiale */
+    if (s->dimensionX_target == 0 || s->raggio_target == 0 ) {return ERR_NOT_SUPPORTED;} /* target non configurato per questo materiale */
 
     percentualeX = fabs(object->dimensionX - s->dimensionX_target) * 100 /s->dimensionX_target;
     percentualeR = fabs(object->raggio - s->raggio_target) * 100 /s->raggio_target;
@@ -136,6 +136,8 @@ if(s->status == QUALITA_OK){
 
     return s->risultato_ultima_lettura;
 }
+
+return ERR_NOT_SUPPORTED;
 }
 
 void get_type_letture_totali(const SensoreQualita *s, long type_letture_totali[3])
