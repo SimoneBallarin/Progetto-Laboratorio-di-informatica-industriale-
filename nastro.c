@@ -283,6 +283,14 @@ int nastro_insertObject( nastro_t *n, object_t *object, int step_corrente )
     return OP_SUCCESS;
 }
 
+bool nastro_isReady( const nastro_t *n, int step_corrente )
+{
+    if ( n == NULL || n->head == NULL ) {
+        return false;
+    }
+    return ( step_corrente - n->head->step_ingresso ) >= n->velocita;
+}
+
 object_t *nastro_removeReadyObject( nastro_t *n, int step_corrente )
 {
     object_t *result;
