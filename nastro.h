@@ -301,6 +301,23 @@ int nastro_insertObject( nastro_t *n, object_t *object, int step_corrente );
  * @return Puntatore all'oggetto pronto per uscire, o NULL se il nastro
  *         è vuoto o l'oggetto in testa non ha ancora finito l'attraversamento.
  */
+/**
+ * @brief Controlla se l'oggetto in testa ha completato l'attraversamento,
+ *        SENZA rimuoverlo (a differenza di nastro_removeReadyObject).
+ *
+ * Serve al controllore per verificare che ci sia posto a valle PRIMA di
+ * rimuovere l'oggetto dal nastro — stesso motivo di machine_isReady/
+ * isp_isReady: senza questa funzione, l'unico modo per sapere se il
+ * nastro è pronto sarebbe chiamare nastro_removeReadyObject, che però
+ * rilascia comunque l'oggetto, rischiando di perderlo se a valle non
+ * c'è posto.
+ * @param n Puntatore al nastro.
+ * @param step_corrente Step di simulazione corrente.
+ * @return true se il nastro non è vuoto e l'oggetto in testa è pronto
+ *         per uscire, false altrimenti (anche se n è NULL).
+ */
+bool nastro_isReady( const nastro_t *n, int step_corrente );
+
 object_t *nastro_removeReadyObject( nastro_t *n, int step_corrente );
 
 /**
