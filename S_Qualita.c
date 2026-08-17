@@ -2,14 +2,14 @@
 #include <string.h>
 #include "S_Qualita.h"
 #include "errors.h"
+#include "object.h"
 
 int sensore_qualita_init(SensoreQualita *s, const char *ID,
                           MalfunzionamentoSensore *m,
                           bool malfunzionamento_abilitato,
-                          const int target[3])
+                          const int dimensionX_target,
+                          const int raggio_target )
 {
-    int i;
-
     if (s == NULL || m == NULL || ID == NULL || target == NULL) return ERR_NULL_PTR;
     if (strlen(ID) > sizeof(s->ID) - 1) return ERR_ID_INVALID;
 
@@ -20,10 +20,9 @@ int sensore_qualita_init(SensoreQualita *s, const char *ID,
     s->risultato_ultima_lettura = -1;
     s->letture_totali = 0;
     s->anomalie_rilevate = 0;
-    for (i = 0; i < 3; i++) {
-        s->target[i] = target[i];
-        s->type_letture_totali[i] = 0;
-    }
+    s->dimensionX_target = dimensionX_target;
+    s->raggio_target = raggio_target;
+
 
     m->last_lettura = 0;
     m->time_since_last_change = 0;
@@ -33,7 +32,7 @@ int sensore_qualita_init(SensoreQualita *s, const char *ID,
     m->time_error = 1000;
     m->time_ok = 1000;
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int sensore_qualita_imposta_guasto(MalfunzionamentoSensore *m, int time_error, int time_ok)
@@ -43,7 +42,7 @@ int sensore_qualita_imposta_guasto(MalfunzionamentoSensore *m, int time_error, i
 
     m->time_error = time_error;
     m->time_ok = time_ok;
-    return 0;
+    return OP_SUCCESS;
 }
 
 int update_status(SensoreQualita *s, MalfunzionamentoSensore *m, int time_current)
@@ -53,7 +52,7 @@ int update_status(SensoreQualita *s, MalfunzionamentoSensore *m, int time_curren
     if (!m->malfunzionamento_abilitato) {
         s->status = QUALITA_OK;
         m->is_malfunzionante = false;
-        return 0;
+        return OP_SUCCESS;
     }
 
     if (s->status == QUALITA_OK &&
@@ -68,7 +67,7 @@ int update_status(SensoreQualita *s, MalfunzionamentoSensore *m, int time_curren
         m->time_since_last_change = time_current;
     }
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int get_status_qualita(const SensoreQualita *s)
@@ -77,37 +76,37 @@ int get_status_qualita(const SensoreQualita *s)
     return s->status;
 }
 
-int get_Material(int object)
+char get_Material(object_t *object, const SensoreQualita *s)
 {
-    /* Nella versione originale mancava un return di default: se
-     * 'object' non era 0 ne' 1, la funzione non restituiva nulla
-     * (comportamento indefinito). Qui il caso non riconosciuto ricade
-     * sul materiale 2. */
-    if (object == 0) return 0;
-    if (object == 1) return 1;
-    return 2;
+    if (s == NULL || object == NULL) return ERR_NULL_PTR;
+    
+    float densita[2] = {8.96 , 7.85};
+    float ConfrontoA = (float)(((object -> dimensionX)*(object -> raggio)^2)*3.14 * densita[0]);
+    float ConfrontoB = (float)(((object -> dimensionX)*(object -> raggio)^2)*3.14 * densita[1]);
+    float materiale;
+    float e;
+    int p=5;
+    if (object -> type == "A") {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)^2)*3.14 * densita[0]); e = 100*p/materiale;}
+    if (object -> type == "B") {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)^2)*3.14 * densita[1]); e = 100*p/materiale;}
+    if((materiale - e)<= ConfrontoA <= (materiale + e)){ return "A";}
+    else if((materiale - e)<= ConfrontoB <= (materiale + e)){return "B";}
+    else {return 0;}
 }
 
 int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
-                int time_current, int object, bool oggetto_presente)
+                int time_current, object_t *object, bool oggetto_presente)
 {
-    int materiale;
-    int target;
-    int percentuale;
+    
+    int percentualeX;
+    int percentualeR;
 
-    if (s == NULL || m == NULL) return ERR_NULL_PTR;
+    if (s == NULL || m == NULL || object == NULL) return ERR_NULL_PTR;
     if (!oggetto_presente) return ERR_NOT_SUPPORTED;
 
     update_status(s, m, time_current);
 
     if (s->status != QUALITA_OK) {
-        /* Sensore in malfunzionamento: la lettura e' inaffidabile per
-         * definizione, quindi non ha senso calcolarla dal target. La
-         * generiamo casualmente, ma - a differenza della versione
-         * originale - la contiamo anche come anomalia, cosi' il
-         * controllore/log puo' sapere quante letture sono avvenute
-         * durante un guasto (metrica richiesta in sez. 2.1). */
-        s->risultato_ultima_lettura = rand() % 3;
+        s->risultato_ultima_lettura = RIVALUTAZIONE;
         s->type_letture_totali[s->risultato_ultima_lettura]++;
         s->letture_totali++;
         s->anomalie_rilevate++;
@@ -115,27 +114,27 @@ int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
         return s->risultato_ultima_lettura;
     }
 
-    materiale = get_Material(object);
-    if (materiale < 0 || materiale >= 3) return ERR_NOT_SUPPORTED;
+if(s->status == QUALITA_OK){
+    if (s->dimensionX_target == 0 || s->raggio_target ) return ERR_NOT_SUPPORTED; /* target non configurato per questo materiale */
 
-    target = s->target[materiale];
-    if (target == 0) return ERR_NOT_SUPPORTED; /* target non configurato per questo materiale */
-
-    percentuale = abs(object - target) * 100 / target;
-
-    if (percentuale <= 5) {
+    percentualeX = abs(object->dimensionX - s->dimensionX_target) * 100 /s->dimensionX_target;
+    percentualeR = abs(object->raggio - s->raggio_target) * 100 /s->raggio_target;
+    if (percentualeX <= 5 ) {
         s->risultato_ultima_lettura = CONFORME;
-    } else if (percentuale <= 10) {
+    } 
+     else if ((percentualeX && percentualeR) <= 10 ) {
         s->risultato_ultima_lettura = RIVALUTAZIONE;
-    } else {
+    } 
+    else if ((percentualeX && percentualeR) <= 100){
         s->risultato_ultima_lettura = SCARTO;
-    }
+    }else{return ERR_NOT_SUPPORTED;}
 
     s->type_letture_totali[s->risultato_ultima_lettura]++;
     s->letture_totali++;
     m->last_lettura = s->letture_totali;
 
     return s->risultato_ultima_lettura;
+}
 }
 
 void get_type_letture_totali(const SensoreQualita *s, long type_letture_totali[3])

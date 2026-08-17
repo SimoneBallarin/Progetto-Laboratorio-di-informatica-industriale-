@@ -2,6 +2,7 @@
 #include <string.h>
 #include "S_Buffer.h"
 #include "errors.h"
+#include "object.h"
 
 int sensore_Buffer_init(SensoreBuffer *s, const char *ID, long livello_massimo)
 {
@@ -16,7 +17,7 @@ int sensore_Buffer_init(SensoreBuffer *s, const char *ID, long livello_massimo)
     s->livello_massimo = livello_massimo;
     s->status = BUFFER_EMPTY;
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int aggiornamento_status(SensoreBuffer *s, int new_object)
@@ -51,7 +52,7 @@ int aggiornamento_status(SensoreBuffer *s, int new_object)
         s->status = BUFFER_EMPTY;
     }
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int get_status_buffer(const SensoreBuffer *s)

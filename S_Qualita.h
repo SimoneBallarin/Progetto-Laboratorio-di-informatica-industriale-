@@ -1,6 +1,6 @@
 #ifndef S_QUALITA_H
 #define S_QUALITA_H
-
+#include "object.h"
 #include <stdbool.h>
 
 /* Rinominato da 'BufferStatus' (nome che collideva con l'enum omonimo nel
@@ -19,8 +19,9 @@ typedef enum {
 /* Rinominato da 'SensoreQualità' (accento nel nome del tipo: funziona per
  * caso con UTF-8 ma non e' C portabile) a 'SensoreQualita'. */
 typedef struct {
-    char ID[20];
-    int  target[3];                  /* valore di riferimento per materiale, indice = get_Material() */
+    char ID[IDLENGTH];
+    double  dimensionX_target;
+    double  raggio_target;                  
     StatoSensoreQualita status;
     int  risultato_ultima_lettura;   /* ultimo TipoQualita calcolato */
     long letture_totali;
@@ -46,7 +47,8 @@ typedef struct {
 int  sensore_qualita_init(SensoreQualita *s, const char *ID,
                            MalfunzionamentoSensore *m,
                            bool malfunzionamento_abilitato,
-                           const int target[3]);
+                           const int dimensionX_target,
+                          const int raggio_target);
 
 /* Configura la durata (in passi di simulazione) dei cicli OK/guasto. */
 int  sensore_qualita_imposta_guasto(MalfunzionamentoSensore *m,
@@ -64,7 +66,7 @@ int  get_status_qualita(const SensoreQualita *s);
  * prodotta (per restare fedeli a un guasto realistico) ma viene anche
  * contata come anomalia in s->anomalie_rilevate. */
 int  get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
-                  int time_current, int object, bool oggetto_presente);
+                  int time_current, object_t *object, bool oggetto_presente);
 
 /* Copia i 3 contatori (CONFORME/RIVALUTAZIONE/SCARTO) in type_letture_totali,
  * che deve essere un array di almeno 3 long allocato dal chiamante. */
@@ -75,6 +77,6 @@ long get_anomalie_rilevate(const SensoreQualita *s);
 
 /* Determina l'indice di materiale (0,1,2) usato per selezionare la
  * soglia target[] corretta. */
-int  get_Material(int object);
+char  get_Material(object_t *object , const SensoreQualita *s);
 
 #endif

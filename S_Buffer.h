@@ -1,6 +1,6 @@
 #ifndef S_BUFFER_H
 #define S_BUFFER_H
-
+#include "object.h"
 #include <stdbool.h>
 
 /* Rinominato da 'BufferStatus' a 'StatoBuffer' per evitare collisione di
@@ -18,7 +18,7 @@ typedef enum {
 } StatoBuffer;
 
 typedef struct {
-    char ID[20];
+    char ID[IDLENGTH];
     long livello_attuale;
     long livello_massimo;
     StatoBuffer status;

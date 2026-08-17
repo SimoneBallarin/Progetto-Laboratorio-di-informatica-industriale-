@@ -3,7 +3,7 @@
 #include "Motore.h"
 #include "errors.h"
 
-int motore_init(Motore *m, const char *ID, int velocita_target)
+int motore_init(Motore *m, const char *ID, int velocita_target , int accelerazione_desiderata)
 {
     if (m == NULL || ID == NULL) return ERR_NULL_PTR;
     if (strlen(ID) > sizeof(m->ID) - 1) return ERR_ID_INVALID;
@@ -15,7 +15,7 @@ int motore_init(Motore *m, const char *ID, int velocita_target)
     m->velocita_attuale = 0;
     m->status = MOTORE_OFF;
     m->status_precedente = MOTORE_OFF;
-    m->acc = 2000; /* accelerazione del motore */
+    m->acc = accelerazione_desiderata; /* accelerazione del motore */
 
     /* la versione originale inizializzava solo temperatura_start,
      * lasciando temperatura_motore non inizializzata */
