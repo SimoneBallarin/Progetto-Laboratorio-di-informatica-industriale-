@@ -138,6 +138,16 @@ buffer_t *registry_getBuffer( const char *ID )
     return (buffer_t *) registry_getIfType( ID, ENTITY_BUFFER );
 }
 
+machine_t *registry_getMachine( const char *ID )
+{
+    return (machine_t *) registry_getIfType( ID, ENTITY_MACHINE );
+}
+
+isp_t *registry_getISP( const char *ID )
+{
+    return (isp_t *) registry_getIfType( ID, ENTITY_ISP );
+}
+
 nastro_t *registry_getNastro( const char *ID )
 {
     return (nastro_t *) registry_getIfType( ID, ENTITY_NASTRO );
