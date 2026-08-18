@@ -22,7 +22,7 @@ int motore_init(Motore *m, const char *ID, int velocita_target , int accelerazio
     m->temperatura_motore = 25;
     m->temperatura_start = 25;
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int Motortime_update(MotorTime *mt, int time_globale, MotorState status, MotorState status_precedente)
@@ -46,13 +46,13 @@ int Motortime_update(MotorTime *mt, int time_globale, MotorState status, MotorSt
         mt->time_on = 0;
     }
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int motore_aggiorna_velocita(Motore *m, const MotorTime *mt)
 {
     if (m == NULL || mt == NULL) return ERR_NULL_PTR;
-    if (m->status != MOTORE_ON) return 0; /* a motore spento la velocita' non si aggiorna qui */
+    if (m->status != MOTORE_ON) return OP_SUCCESS; /* a motore spento la velocita' non si aggiorna qui */
 
     if (m->velocita_attuale < m->velocita_target) {
         m->velocita_attuale = mt->time_on * m->acc; /* ogni secondo la velocita' aumenta di 'acc' */
@@ -61,7 +61,7 @@ int motore_aggiorna_velocita(Motore *m, const MotorTime *mt)
         m->velocita_attuale = m->velocita_target; /* la velocita' non puo' superare il target */
     }
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int motore_imposta_velocita_target(Motore *m, int velocita_target)
@@ -70,7 +70,7 @@ int motore_imposta_velocita_target(Motore *m, int velocita_target)
     if (velocita_target < 0) return ERR_OUT_OF_RANGE;
 
     m->velocita_target = velocita_target;
-    return 0;
+    return OP_SUCCESS;
 }
 
 int motore_set_temperatura(Motore *m, const MotorTime *mt, MotorState status_precedente)
@@ -95,7 +95,7 @@ int motore_set_temperatura(Motore *m, const MotorTime *mt, MotorState status_pre
         m->temperatura_motore = 25; /* la temperatura non scende sotto l'ambiente */
     }
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int motore_update(Motore *m, MotorTime *mt, MotorState stato, int time_globale)
@@ -119,7 +119,7 @@ int motore_update(Motore *m, MotorTime *mt, MotorState stato, int time_globale)
 
     m->status_precedente = status_precedente;
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int get_MotorTime(const MotorTime *mt, int x)
@@ -164,7 +164,7 @@ int error_motor_init(MotorError *me)
     me->error = 0;
     snprintf(me->error_message, sizeof(me->error_message), "Nessun errore");
 
-    return 0;
+    return OP_SUCCESS;
 }
 
 int error_motor_set(MotorError *me, int error)
@@ -186,5 +186,5 @@ int error_motor_set(MotorError *me, int error)
             break;
     }
 
-    return 0;
+    return OP_SUCCESS;
 }

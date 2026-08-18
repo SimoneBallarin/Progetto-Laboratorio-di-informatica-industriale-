@@ -328,6 +328,8 @@ static void processISP( controllore_t *c, const char *ID, int step )
     object_t *obj;
     TipoQualita esito;
     deviatoreAssoc_t *dev;
+    int outIndex;
+    int outCount;
 
     i = cell_getISP( c->cell, ID );
     if ( i == NULL || !isp_isReady( i, step ) ) {
@@ -340,9 +342,43 @@ static void processISP( controllore_t *c, const char *ID, int step )
     }
 
     dev = findDeviatoreAssoc( c, ID );
-    /* L'indice di uscita corrisponde all'esito: vedi la convenzione
-     * documentata in cell.h (CONFORME=0, RIVALUTAZIONE=1, SCARTO=2). */
-    routeObject( c, ENTITY_ISP, ID, obj, (int) esito, step, dev );
+
+    /* L'indice di uscita corrisponde di norma all'esito (convenzione in
+     * cell.h: CONFORME=0, RIVALUTAZIONE=1, SCARTO=2). Con 4 uscite
+     * collegate (layout con doppio esito "conforme", uno per materiale:
+     * es. Alacciaio/Blrame), l'esito CONFORME da solo non basta a
+     * scegliere tra le due: usiamo object->type per decidere tra
+     * l'indice 0 (materiale 'A') e l'ultimo indice, 3 (materiale 'B'/
+     * qualunque altro), lasciando RIVALUTAZIONE=1 e SCARTO=2 invariati. */
+    outCount = genericOutputCount( c, ENTITY_ISP, ID );
+    outIndex = (int) esito;
+
+    /* ISP "passacarte" con una sola uscita (es. il primo ISP di un
+     * layout che serve solo a taggare il materiale, non a giudicare la
+     * qualita'): l'esito calcolato da get_qualita non ha alcun indice
+     * valido a cui corrispondere se non lo 0, quindi va sempre e
+     * comunque instradato li', a prescindere da quale sia. Senza questo
+     * caso, un esito RIVALUTAZIONE/SCARTO su una ISP a singola uscita
+     * farebbe uscire l'oggetto dalla linea per errore (trattato come
+     * "nessuna uscita a quell'indice"). */
+    if ( outCount == 1 ) {
+        outIndex = 0;
+    } else if ( esito == CONFORME && outCount >= 4 ) {
+        /* Con 4 uscite, l'esito CONFORME da solo non basta a scegliere
+         * tra le due uscite "pezzo conforme" (una per materiale): si usa
+         * get_Material (calcolo su densita'/geometria, non il campo
+         * object->type impostato a mano alla creazione) per decidere. */
+        char materiale = get_Material( obj, &i->sensore );
+        if ( materiale != 'A' && materiale != 'B' ) {
+            /* get_Material non ha riconosciuto il materiale entro
+             * tolleranza per nessuna delle due densita': usiamo
+             * object->type come ripiego, per non perdere l'oggetto. */
+            materiale = object_getType( obj );
+        }
+        outIndex = ( materiale == 'B' ) ? 3 : 0;
+    }
+
+    routeObject( c, ENTITY_ISP, ID, obj, outIndex, step, dev );
 }
 
 static void processMachine( controllore_t *c, const char *ID, int step )
