@@ -33,6 +33,8 @@ typedef struct {
     StatoMacchina stato;
     object_t *oggetto_in_lavorazione;  /**< NULL se la macchina e' libera. */
     int  step_inizio_lavorazione;      /**< Step in cui e' iniziata la lavorazione corrente. */
+    double tolleranza_lavorazione;     /**< Rumore massimo (frazione, es. 0.11 = 11%) applicato a
+                                         *   dimensionX/raggio al rilascio (vedi machine_tryRelease). */
     idNode_t *inputList;
     idNode_t *outputList;
     idNode_t *sensorList;
@@ -93,6 +95,27 @@ const char *machine_getID( const machine_t *m );
  */
 int machine_getTempoLavorazione( const machine_t *m );
 
+/**
+ * @brief Imposta la tolleranza di lavorazione: la percentuale massima di
+ *        rumore casuale applicata a dimensionX/raggio dell'oggetto al
+ *        momento del rilascio (vedi machine_tryRelease).
+ *
+ * Non obbligatorio: machine_create imposta già un valore di default
+ * (0.11, cioè 11%). Va chiamata solo se serve una tolleranza diversa
+ * per una specifica macchina.
+ * @param m Puntatore alla macchina.
+ * @param tolleranza Frazione (es. 0.11 per 11%), deve essere >= 0.
+ * @return OP_SUCCESS se impostata, un codice ERR_* (vedi errors.h) altrimenti.
+ */
+short int machine_setTolleranzaLavorazione( machine_t *m, double tolleranza );
+
+/**
+ * @brief Legge la tolleranza di lavorazione attualmente impostata.
+ * @param m Puntatore alla macchina.
+ * @return La tolleranza (frazione, es. 0.11 = 11%), oppure -1.0 se m è NULL.
+ */
+double machine_getTolleranzaLavorazione( const machine_t *m );
+
 short int machine_addInput( machine_t *m, const char *ID );
 short int machine_addOutput( machine_t *m, const char *ID );
 int machine_getInputCount( const machine_t *m );
@@ -127,10 +150,20 @@ short int machine_admit( machine_t *m, object_t *object, int step_corrente );
 /**
  * @brief Se il tempo di lavorazione e' trascorso, libera la macchina e
  *        restituisce l'oggetto lavorato.
+ *
+ * PRIMA di restituirlo, altera dimensionX e raggio dell'oggetto con un
+ * rumore casuale indipendente per ciascuno dei due valori, entro +/- la
+ * tolleranza di lavorazione (vedi machine_setTolleranzaLavorazione,
+ * default 11%): simula una lavorazione reale mai perfettamente precisa,
+ * cosi' l'ISP a valle puo' effettivamente rilevare pezzi fuori
+ * tolleranza. Usa rand(): il chiamante deve aver seminato il generatore
+ * una sola volta all'avvio del programma (stessa convenzione di
+ * S_Qualita.h e Motore.h).
  * @param m Puntatore alla macchina.
  * @param step_corrente Step di simulazione corrente.
- * @return Puntatore all'oggetto lavorato, o NULL se la macchina e' libera
- *         o se la lavorazione non e' ancora completata.
+ * @return Puntatore all'oggetto lavorato (con dimensionX/raggio alterati),
+ *         o NULL se la macchina e' libera o se la lavorazione non e'
+ *         ancora completata.
  */
 object_t *machine_tryRelease( machine_t *m, int step_corrente );
 
