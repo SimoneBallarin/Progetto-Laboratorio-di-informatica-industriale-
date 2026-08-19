@@ -245,7 +245,7 @@ machine_t *cell_addMachine( cell_t *cell, const char *ID, int tempo_lavorazione,
     return m;
 }
 
-isp_t *cell_addISP( cell_t *cell, const char *ID, int tempo_controllo, const int target[3], short int *errCode )
+isp_t *cell_addISP( cell_t *cell, const char *ID, int tempo_controllo, int dimensionX_target, int raggio_target, short int *errCode )
 {
     isp_t *i;
     ispListNode_t *node;
@@ -258,7 +258,7 @@ isp_t *cell_addISP( cell_t *cell, const char *ID, int tempo_controllo, const int
         return NULL;
     }
 
-    i = isp_create( ID, tempo_controllo, target, &localErr );
+    i = isp_create( ID, tempo_controllo, dimensionX_target, raggio_target, &localErr );
     if ( i == NULL ) {
         if ( errCode != NULL ) {
             *errCode = localErr;

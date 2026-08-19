@@ -41,6 +41,7 @@ typedef struct {
     int stepCreation;           /**< Step temporale all'entrata della linea. */
     int stepOut;           /**< step temporale all'uscita della linea, STEP_OUT_NONE se non ancora uscito. */
     double dimensionX;   /**< Dimensione oggetto fittizia. */
+    double raggio;        /**< Raggio dell'oggetto (per il calcolo del materiale in S_Qualita). */
 } object_t;
 
 /* ------------------------------------------------------------------ */
@@ -54,12 +55,13 @@ typedef struct {
  * @param Obj_type tipologia oggetto: A = acciaio, B = rame.
  * @param step step temporale in cui l'oggetto viene creato.
  * @param Obj_dimensionX dimensione fittizia alla creazione (deve essere >= 0).
+ * @param Obj_raggio raggio dell'oggetto alla creazione (deve essere >= 0).
  * @param errCode puntatore opzionale (può essere NULL) in cui viene scritto OP_SUCCESS
  *        oppure un codice ERR_* (vedi errors.h) che spiega perché la creazione è fallita
  *        (ERR_NULL_PTR, ERR_ID_INVALID, ERR_OUT_OF_RANGE, ERR_ALLOC).
  * @return puntatore all'oggetto creato, o NULL in caso di errore (vedi *errCode per il motivo).
  */
-object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_type, int step, double Obj_dimensionX, short int *errCode );
+object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_type, int step, double Obj_dimensionX, double Obj_raggio, short int *errCode );
 
 /**
  * @brief cambia la posizione dell'oggetto.
@@ -87,6 +89,17 @@ short int object_setStepOut( object_t *Obj, int step );
  * @return OP_SUCCESS se l'operazione è andata a buon fine, un codice ERR_* (vedi errors.h) in caso di errore.
  */
 short int object_setDimensionX( object_t *Obj, double newDimension );
+
+/**
+ * @brief imposta/aggiorna il raggio dell'oggetto.
+ *
+ * Stesso utilizzo di object_setDimensionX (letture/lavorazioni che
+ * alterano il pezzo), ma sul raggio invece della dimensione.
+ * @param Obj puntatore all'oggetto.
+ * @param newRaggio nuovo valore del raggio (deve essere >= 0).
+ * @return OP_SUCCESS se l'operazione è andata a buon fine, un codice ERR_* (vedi errors.h) in caso di errore.
+ */
+short int object_setRaggio( object_t *Obj, double newRaggio );
 
 /**
  * @brief Restituisce la priorità dell'oggetto.
@@ -149,6 +162,13 @@ int object_getStepOut( const object_t *Obj );
  * @return valore di dimensionX (sempre >= 0), oppure ERR_NULL_PTR se Obj è NULL.
  */
 double object_getDimensionX( const object_t *Obj );
+
+/**
+ * @brief Raggio corrente dell'oggetto.
+ * @param Obj puntatore all'oggetto.
+ * @return valore di raggio (sempre >= 0), oppure ERR_NULL_PTR se Obj è NULL.
+ */
+double object_getRaggio( const object_t *Obj );
 
 /**
  * @brief Elimina un oggetto.

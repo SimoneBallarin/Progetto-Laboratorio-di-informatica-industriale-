@@ -13,7 +13,7 @@
 /*  CREAZIONE / DISTRUZIONE                                            */
 /* ------------------------------------------------------------------ */
 
-object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_type, int step, double Obj_dimensionX, short int *errCode )
+object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_type, int step, double Obj_dimensionX, double Obj_raggio, short int *errCode )
 {
     object_t *obj;
 
@@ -41,6 +41,12 @@ object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_ty
         }
         return NULL;
     }
+    if ( Obj_raggio < 0.0 ) {
+        if ( errCode != NULL ) {
+            *errCode = ERR_OUT_OF_RANGE;
+        }
+        return NULL;
+    }
 
     obj = malloc( sizeof( object_t ) );
     if ( obj == NULL ) {
@@ -63,6 +69,7 @@ object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_ty
     obj->stepCreation = step;
     obj->stepOut = STEP_OUT_NONE;
     obj->dimensionX = Obj_dimensionX;
+    obj->raggio = Obj_raggio;
 
     if ( errCode != NULL ) {
         *errCode = OP_SUCCESS;
@@ -122,6 +129,20 @@ short int object_setDimensionX( object_t *Obj, double newDimension )
     }
 
     Obj->dimensionX = newDimension;
+
+    return OP_SUCCESS;
+}
+
+short int object_setRaggio( object_t *Obj, double newRaggio )
+{
+    if ( Obj == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    if ( newRaggio < 0.0 ) {
+        return ERR_OUT_OF_RANGE;
+    }
+
+    Obj->raggio = newRaggio;
 
     return OP_SUCCESS;
 }
@@ -193,6 +214,15 @@ double object_getDimensionX( const object_t *Obj )
     return Obj->dimensionX;
 }
 
+double object_getRaggio( const object_t *Obj )
+{
+    if ( Obj == NULL ) {
+        /* stesso ragionamento di object_getDimensionX. */
+        return (double) ERR_NULL_PTR;
+    }
+    return Obj->raggio;
+}
+
 /* ------------------------------------------------------------------ */
 /*  STAMPA                                                              */
 /* ------------------------------------------------------------------ */
@@ -204,7 +234,7 @@ void object_print( const object_t *Obj )
         return;
     }
 
-    printf( "Object[ID=%s, priority=%d, type=%c, location=%s, stepCreation=%d, stepOut=%d, dimensionX=%.2f]\n",
+    printf( "Object[ID=%s, priority=%d, type=%c, location=%s, stepCreation=%d, stepOut=%d, dimensionX=%.2f, raggio=%.2f]\n",
             Obj->ID, Obj->priority, Obj->type, Obj->ID_LOCATION,
-            Obj->stepCreation, Obj->stepOut, Obj->dimensionX );
+            Obj->stepCreation, Obj->stepOut, Obj->dimensionX, Obj->raggio );
 }
