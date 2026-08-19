@@ -9,6 +9,10 @@
 
 #include "machine.h"
 
+/* Tolleranza di default (11%), usata da machine_create se non
+ * sovrascritta con machine_setTolleranzaLavorazione. */
+#define TOLLERANZA_LAVORAZIONE_DEFAULT 0.11
+
 machine_t *machine_create( const char *ID, int tempo_lavorazione, short int *errCode )
 {
     machine_t *m;
@@ -39,6 +43,7 @@ machine_t *machine_create( const char *ID, int tempo_lavorazione, short int *err
     m->stato = MACCHINA_LIBERA;
     m->oggetto_in_lavorazione = NULL;
     m->step_inizio_lavorazione = 0;
+    m->tolleranza_lavorazione = TOLLERANZA_LAVORAZIONE_DEFAULT;
     m->inputList = NULL;
     m->outputList = NULL;
     m->sensorList = NULL;
@@ -96,6 +101,28 @@ int machine_getTempoLavorazione( const machine_t *m )
         return ERR_NULL_PTR;
     }
     return m->tempo_lavorazione;
+}
+
+short int machine_setTolleranzaLavorazione( machine_t *m, double tolleranza )
+{
+    if ( m == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    if ( tolleranza < 0.0 ) {
+        return ERR_OUT_OF_RANGE;
+    }
+
+    m->tolleranza_lavorazione = tolleranza;
+
+    return OP_SUCCESS;
+}
+
+double machine_getTolleranzaLavorazione( const machine_t *m )
+{
+    if ( m == NULL ) {
+        return -1.0;
+    }
+    return m->tolleranza_lavorazione;
 }
 
 short int machine_addInput( machine_t *m, const char *ID )
@@ -210,9 +237,30 @@ short int machine_admit( machine_t *m, object_t *object, int step_corrente )
     return OP_SUCCESS;
 }
 
+/**
+ * @brief Restituisce un fattore moltiplicativo casuale in
+ *        [1 - tolleranza, 1 + tolleranza], da applicare a un valore per
+ *        simularne una lettura/lavorazione imprecisa.
+ */
+static double fattore_rumore( double tolleranza )
+{
+    double r; /* uniforme in [0.0, 1.0) */
+
+    if ( tolleranza <= 0.0 ) {
+        return 1.0;
+    }
+
+    r = (double) rand() / ( (double) RAND_MAX + 1.0 );
+
+    /* scala r da [0,1) a [-tolleranza, +tolleranza], poi centra su 1.0 */
+    return 1.0 + ( ( r * 2.0 * tolleranza ) - tolleranza );
+}
+
 object_t *machine_tryRelease( machine_t *m, int step_corrente )
 {
     object_t *result;
+    double nuova_dimensione;
+    double nuovo_raggio;
 
     if ( m == NULL || m->stato == MACCHINA_LIBERA ) {
         return NULL;
@@ -222,6 +270,24 @@ object_t *machine_tryRelease( machine_t *m, int step_corrente )
     }
 
     result = m->oggetto_in_lavorazione;
+
+    /* Rumore indipendente su dimensionX e raggio: una lavorazione reale
+     * non e' mai perfettamente precisa. I due fattori sono estratti
+     * separatamente (non lo stesso rumore applicato a entrambi), cosi'
+     * un pezzo puo' uscire con la dimensione fuori tolleranza ma il
+     * raggio nella norma, o viceversa. */
+    nuova_dimensione = object_getDimensionX( result ) * fattore_rumore( m->tolleranza_lavorazione );
+    nuovo_raggio      = object_getRaggio( result )      * fattore_rumore( m->tolleranza_lavorazione );
+
+    /* dimensione e raggio non hanno senso negativi (object_setRaggio
+     * richiede >= 0): un rumore che li spingerebbe sotto zero viene
+     * limitato a zero invece di essere lasciato passare. */
+    if ( nuova_dimensione < 0.0 ) { nuova_dimensione = 0.0; }
+    if ( nuovo_raggio < 0.0 )     { nuovo_raggio = 0.0; }
+
+    object_setDimensionX( result, nuova_dimensione );
+    object_setRaggio( result, nuovo_raggio );
+
     m->oggetto_in_lavorazione = NULL;
     m->stato = MACCHINA_LIBERA;
 
@@ -237,8 +303,8 @@ void machine_print( const machine_t *m )
         return;
     }
 
-    printf( "Machine[ID=%s, tempo_lavorazione=%d, stato=%s]\n",
-            m->ID, m->tempo_lavorazione,
+    printf( "Machine[ID=%s, tempo_lavorazione=%d, tolleranza=%.1f%%, stato=%s]\n",
+            m->ID, m->tempo_lavorazione, m->tolleranza_lavorazione * 100.0,
             m->stato == MACCHINA_OCCUPATA ? "OCCUPATA" : "LIBERA" );
 
     printf( "  input: " );
