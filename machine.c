@@ -11,7 +11,7 @@
 
 /* Tolleranza di default (11%), usata da machine_create se non
  * sovrascritta con machine_setTolleranzaLavorazione. */
-#define TOLLERANZA_LAVORAZIONE_DEFAULT 0.11
+#define TOLLERANZA_LAVORAZIONE_DEFAULT 0.05
 
 machine_t *machine_create( const char *ID, int tempo_lavorazione, short int *errCode )
 {
@@ -270,14 +270,15 @@ object_t *machine_tryRelease( machine_t *m, int step_corrente )
     }
 
     result = m->oggetto_in_lavorazione;
-
+    int Dlavorato = 20;
+    int Rlavorato = 4;
     /* Rumore indipendente su dimensionX e raggio: una lavorazione reale
      * non e' mai perfettamente precisa. I due fattori sono estratti
      * separatamente (non lo stesso rumore applicato a entrambi), cosi'
      * un pezzo puo' uscire con la dimensione fuori tolleranza ma il
      * raggio nella norma, o viceversa. */
-    nuova_dimensione = object_getDimensionX( result ) * fattore_rumore( m->tolleranza_lavorazione );
-    nuovo_raggio      = object_getRaggio( result )      * fattore_rumore( m->tolleranza_lavorazione );
+    nuova_dimensione = (object_getDimensionX( result )-Dlavorato) * fattore_rumore( m->tolleranza_lavorazione );
+    nuovo_raggio      = (object_getRaggio( result )-Rlavorato) * fattore_rumore( m->tolleranza_lavorazione );
 
     /* dimensione e raggio non hanno senso negativi (object_setRaggio
      * richiede >= 0): un rumore che li spingerebbe sotto zero viene

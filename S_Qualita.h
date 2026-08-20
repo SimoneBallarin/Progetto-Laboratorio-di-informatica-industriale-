@@ -48,7 +48,7 @@ int  sensore_qualita_init(SensoreQualita *s, const char *ID,
                            MalfunzionamentoSensore *m,
                            bool malfunzionamento_abilitato,
                            const int dimensionX_target,
-                          const int raggio_target);
+                           const int raggio_target);
 
 /* Configura la durata (in passi di simulazione) dei cicli OK/guasto. */
 int  sensore_qualita_imposta_guasto(MalfunzionamentoSensore *m,
