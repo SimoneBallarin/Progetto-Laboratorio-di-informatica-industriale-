@@ -25,6 +25,8 @@ typedef struct {
     StatoSensoreQualita status;
     int  risultato_ultima_lettura;   /* ultimo TipoQualita calcolato */
     long letture_totali;
+    long A;
+    long B;
     long type_letture_totali[3];     /* conteggio letture per CONFORME/RIVALUTAZIONE/SCARTO */
     long anomalie_rilevate;          /* letture avvenute durante un malfunzionamento (sez. 2.1) */
 } SensoreQualita;
@@ -77,6 +79,7 @@ long get_anomalie_rilevate(const SensoreQualita *s);
 
 /* Determina l'indice di materiale (0,1,2) usato per selezionare la
  * soglia target[] corretta. */
-char  get_Material(object_t *object , const SensoreQualita *s);
+char  get_Material(object_t *object , SensoreQualita *s);
+
 
 #endif

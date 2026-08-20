@@ -11,16 +11,29 @@
 #include "registry.h"
 #include "Motore.h"
 #include "Deviatore.h"
+#include "S_Qualita.h"
 
 /* ------------------------------------------------------------------ */
 /*  ASSOCIAZIONI INTERNE (attuatori/sensori collegati a un'entità)      */
 /* ------------------------------------------------------------------ */
 
-/** @brief Motore + MotorTime collegati a un nastro (via controllore_collegaMotore). */
+/** @brief Motore + MotorTime collegati a un nastro O a una macchina (via
+ *         controllore_collegaMotore). targetType dice quale dei due,
+ *         cosi' processNastro/processMachine sanno come determinare se
+ *         il motore deve essere acceso (nastro_isEmpty per un nastro,
+ *         machine_isBusy per una macchina). */
 typedef struct motoreAssoc {
-    char nastroID[IDLENGTH];
+    char targetID[IDLENGTH];
+    entity_type_t targetType;   /**< ENTITY_NASTRO o ENTITY_MACHINE. */
     Motore motore;
     MotorTime motoreTime;
+    long tempoOnTotale;          /**< Passi cumulativi con motore ON, su tutta la simulazione. */
+    long tempoOffTotale;         /**< Passi cumulativi con motore OFF, su tutta la simulazione.
+                                   *   NB: MotorTime.time_on/time_off tengono solo la durata del
+                                   *   tratto continuo CORRENTE (si azzerano ad ogni cambio di
+                                   *   stato) - questi due invece sono un totale che non si azzera
+                                   *   mai, incrementati di 1 ad ogni passo in processMachine/
+                                   *   processNastro. */
     struct motoreAssoc *next;
 } motoreAssoc_t;
 
@@ -45,6 +58,19 @@ typedef struct presenceSensorAssoc {
     SensorePresenza sensore;
     struct presenceSensorAssoc *next;
 } presenceSensorAssoc_t;
+
+/** @brief SensoreQualita + MalfunzionamentoSensore collegati a una ISP
+ *         (via controllore_collegaSensoreQualita). A differenza di
+ *         Motore/Deviatore/SensoreBuffer, questo NON viene creato
+ *         automaticamente da nessuno: se una ISP non ha nessun
+ *         qualitaSensorAssoc_t, semplicemente non fa controllo qualità
+ *         (isp_tryRelease resta un puro timer). */
+typedef struct qualitaSensorAssoc {
+    char ispID[IDLENGTH];
+    SensoreQualita sensore;
+    MalfunzionamentoSensore guasto;
+    struct qualitaSensorAssoc *next;
+} qualitaSensorAssoc_t;
 
 /**
  * @brief Nodo della coda di oggetti "pronti ma non ancora instradabili".
@@ -73,6 +99,7 @@ struct controllore {
     deviatoreAssoc_t *deviatori;
     bufferSensorAssoc_t *sensoriBuffer;
     presenceSensorAssoc_t *sensoriPresenza;
+    qualitaSensorAssoc_t *sensoriQualita;
     long completati;
 };
 
@@ -80,11 +107,11 @@ struct controllore {
 /*  RICERCA ASSOCIAZIONI                                                */
 /* ------------------------------------------------------------------ */
 
-static motoreAssoc_t *findMotoreAssoc( controllore_t *c, const char *nastroID )
+static motoreAssoc_t *findMotoreAssoc( controllore_t *c, const char *targetID )
 {
     motoreAssoc_t *cur;
     for ( cur = c->motori; cur != NULL; cur = cur->next ) {
-        if ( strcmp( cur->nastroID, nastroID ) == 0 ) { return cur; }
+        if ( strcmp( cur->targetID, targetID ) == 0 ) { return cur; }
     }
     return NULL;
 }
@@ -93,6 +120,15 @@ static deviatoreAssoc_t *findDeviatoreAssoc( controllore_t *c, const char *ispID
 {
     deviatoreAssoc_t *cur;
     for ( cur = c->deviatori; cur != NULL; cur = cur->next ) {
+        if ( strcmp( cur->ispID, ispID ) == 0 ) { return cur; }
+    }
+    return NULL;
+}
+
+static qualitaSensorAssoc_t *findQualitaSensorAssoc( controllore_t *c, const char *ispID )
+{
+    qualitaSensorAssoc_t *cur;
+    for ( cur = c->sensoriQualita; cur != NULL; cur = cur->next ) {
         if ( strcmp( cur->ispID, ispID ) == 0 ) { return cur; }
     }
     return NULL;
@@ -107,26 +143,61 @@ static bufferSensorAssoc_t *findBufferSensorAssoc( controllore_t *c, const char 
     return NULL;
 }
 
-static presenceSensorAssoc_t *findOrCreatePresenceSensorAssoc( controllore_t *c, const char *ID )
+static presenceSensorAssoc_t *findPresenceSensorAssoc( controllore_t *c, const char *ID )
 {
     presenceSensorAssoc_t *cur;
-    short int err;
-
     for ( cur = c->sensoriPresenza; cur != NULL; cur = cur->next ) {
         if ( strcmp( cur->ID, ID ) == 0 ) { return cur; }
     }
+    return NULL;
+}
+
+/**
+ * @brief Aggancia un sensore di presenza a un ID di ingresso.
+ *
+ * PRIMA di questa versione, il sensore veniva creato "al volo" alla
+ * prima chiamata di controllore_segnalaArrivo per un dato ID -
+ * incoerente con Motore/Deviatore/SensoreQualita/SensoreBuffer (sempre
+ * agganciati esplicitamente PRIMA di essere usati). Ora
+ * controllore_segnalaArrivo fallisce con ERR_NOT_FOUND se nessuno ha
+ * prima chiamato questa funzione per quell'ID.
+ *
+ * L'ID non deve necessariamente esistere già nella cella come buffer
+ * (per design: "il sensore è indipendente dal buffer vero e proprio"):
+ * se il collegamento a un'entità reale fallisce, il sensore resta
+ * comunque valido, solo non tracciato su nessuna entità.
+ */
+short int controllore_collegaSensorePresenza( controllore_t *c, const char *ID )
+{
+    presenceSensorAssoc_t *cur;
+    short int err;
+    char sensorID[IDLENGTH];
+
+    if ( c == NULL || ID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    if ( findPresenceSensorAssoc( c, ID ) != NULL ) {
+        return ERR_DUPLICATE;
+    }
 
     cur = malloc( sizeof( presenceSensorAssoc_t ) );
-    if ( cur == NULL ) { return NULL; }
+    if ( cur == NULL ) { return ERR_ALLOC; }
 
     strncpy( cur->ID, ID, IDLENGTH - 1 );
     cur->ID[IDLENGTH - 1] = '\0';
     err = (short int) sensore_presenza_init( &cur->sensore, ID );
-    if ( err != OP_SUCCESS ) { free( cur ); return NULL; }
+    if ( err != OP_SUCCESS ) { free( cur ); return err; }
 
     cur->next = c->sensoriPresenza;
     c->sensoriPresenza = cur;
-    return cur;
+
+    /* Tracciabilità (registry): come per gli altri sensori/attuatori. */
+    snprintf( sensorID, IDLENGTH, "%.16s_SP", ID );
+    if ( registry_add( sensorID, ENTITY_SENSOR_PRESENZA, &cur->sensore ) == OP_SUCCESS ) {
+        cell_attachSensor( c->cell, ID, sensorID );
+    }
+
+    return OP_SUCCESS;
 }
 
 /* ------------------------------------------------------------------ */
@@ -222,6 +293,28 @@ static short int pendingAdd( controllore_t *c, object_t *obj, entity_type_t dest
     return OP_SUCCESS;
 }
 
+/**
+ * @brief Se destID (di tipo destType) non ha nessuna uscita configurata,
+ *        l'oggetto appena arrivato lì non si muoverà mai più: lo
+ *        contiamo come completato in questo momento.
+ *
+ * Bug corretto: 'completati' veniva incrementato SOLO nel caso limite
+ * di routeObject in cui l'indice di uscita richiesto non esiste (esito
+ * di una ISP senza abbastanza uscite collegate) - ma un inserimento
+ * RIUSCITO in un buffer terminale (es. uno dei buffer finali del
+ * layout, che hanno 0 output per design) non veniva mai contato:
+ * 'completati' restava sempre a 0 anche a simulazione conclusa con
+ * successo.
+ */
+static void segnaCompletatoSeTerminale( controllore_t *c, entity_type_t destType,
+                                         const char *destID, object_t *obj, int step )
+{
+    if ( genericOutputCount( c, destType, destID ) == 0 ) {
+        object_setStepOut( obj, step );
+        c->completati++;
+    }
+}
+
 static void retryPending( controllore_t *c, int step )
 {
     pendingNode_t *cur;
@@ -257,6 +350,7 @@ static void retryPending( controllore_t *c, int step )
         result = genericInsert( c, cur->destType, cur->destID, cur->obj, step );
         if ( result == OP_SUCCESS ) {
             object_setLocation( cur->obj, cur->destID );
+            segnaCompletatoSeTerminale( c, cur->destType, cur->destID, cur->obj, step );
             if ( prev == NULL ) { c->pending = next; } else { prev->next = next; }
             free( cur );
         } else {
@@ -309,6 +403,7 @@ static short int routeObject( controllore_t *c, entity_type_t fromType, const ch
     result = genericInsert( c, destType, destID, obj, step );
     if ( result == OP_SUCCESS ) {
         object_setLocation( obj, destID );
+        segnaCompletatoSeTerminale( c, destType, destID, obj, step );
         return OP_SUCCESS;
     }
     if ( result == ERR_FULL ) {
@@ -327,6 +422,7 @@ static void processISP( controllore_t *c, const char *ID, int step )
     isp_t *i;
     object_t *obj;
     TipoQualita esito;
+    qualitaSensorAssoc_t *qAssoc;
     deviatoreAssoc_t *dev;
     int outIndex;
     int outCount;
@@ -336,9 +432,31 @@ static void processISP( controllore_t *c, const char *ID, int step )
         return;
     }
 
-    obj = isp_tryRelease( i, step, &esito );
+    /* isp_tryRelease non calcola piu' nessun esito: la ISP di per se'
+     * e' un puro timer. L'esito (se serve) si calcola qui, usando il
+     * sensore agganciato con controllore_collegaSensoreQualita. */
+    obj = isp_tryRelease( i, step );
     if ( obj == NULL ) {
         return;
+    }
+
+    qAssoc = findQualitaSensorAssoc( c, ID );
+    if ( qAssoc != NULL ) {
+        int esitoGrezzo = get_qualita( &qAssoc->sensore, &qAssoc->guasto, step, obj, true );
+        /* get_qualita puo' restituire un codice ERR_* (negativo) solo in
+         * casi anomali di configurazione (es. target non impostato per
+         * questo materiale): per non bloccare la ISP l'oggetto viene
+         * comunque rilasciato, trattato convenzionalmente come SCARTO. */
+        esito = ( esitoGrezzo >= 0 ) ? (TipoQualita) esitoGrezzo : SCARTO;
+    } else {
+        /* Nessun sensore agganciato a questa ISP (es. una ISP
+         * "passacarte" con una sola uscita, che non deve giudicare la
+         * qualita'): l'esito non verra' comunque usato per instradare
+         * se ha una sola uscita (vedi outCount==1 sotto), quindi un
+         * valore neutro qui va bene. Se invece l'ISP ha piu' uscite ma
+         * nessun sensore agganciato, e' una configurazione incompleta:
+         * trattiamo tutto come SCARTO, scelta conservativa. */
+        esito = SCARTO;
     }
 
     dev = findDeviatoreAssoc( c, ID );
@@ -363,12 +481,14 @@ static void processISP( controllore_t *c, const char *ID, int step )
      * "nessuna uscita a quell'indice"). */
     if ( outCount == 1 ) {
         outIndex = 0;
-    } else if ( esito == CONFORME && outCount >= 4 ) {
+    } else if ( esito == CONFORME && outCount >= 4 && qAssoc != NULL ) {
         /* Con 4 uscite, l'esito CONFORME da solo non basta a scegliere
          * tra le due uscite "pezzo conforme" (una per materiale): si usa
          * get_Material (calcolo su densita'/geometria, non il campo
-         * object->type impostato a mano alla creazione) per decidere. */
-        char materiale = get_Material( obj, &i->sensore );
+         * object->type impostato a mano alla creazione) per decidere.
+         * Richiede il sensore agganciato (qAssoc), da cui prende il
+         * target di riferimento usato da get_Material stessa. */
+        char materiale = get_Material( obj, &qAssoc->sensore );
         if ( materiale != 'A' && materiale != 'B' ) {
             /* get_Material non ha riconosciuto il materiale entro
              * tolleranza per nessuna delle due densita': usiamo
@@ -385,9 +505,28 @@ static void processMachine( controllore_t *c, const char *ID, int step )
 {
     machine_t *m;
     object_t *obj;
+    motoreAssoc_t *mot;
 
     m = cell_getMachine( c->cell, ID );
-    if ( m == NULL || !machine_isReady( m, step ) ) {
+    if ( m == NULL ) {
+        return;
+    }
+
+    mot = findMotoreAssoc( c, ID );
+    if ( mot != NULL ) {
+        /* A differenza del nastro (dove il motore spento BLOCCA il
+         * trasporto), qui il motore riflette soltanto lo stato della
+         * macchina: acceso finche' sta lavorando un pezzo, spento
+         * quando e' libera. Non condiziona machine_isReady/tryRelease:
+         * e' tracciato per le sue statistiche (rampa, temperatura),
+         * non governa i tempi di lavorazione (quelli restano decisi da
+         * machine_t stessa, come per il modello aggregato del nastro). */
+        MotorState comando = machine_isBusy( m ) ? MOTORE_ON : MOTORE_OFF;
+        motore_update( &mot->motore, &mot->motoreTime, comando, step );
+        if ( motore_get_status( &mot->motore ) ) { mot->tempoOnTotale++; } else { mot->tempoOffTotale++; }
+    }
+
+    if ( !machine_isReady( m, step ) ) {
         return;
     }
 
@@ -420,6 +559,7 @@ static void processNastro( controllore_t *c, const char *ID, int step )
          * temperatura), non ricalcola la fisica del trasporto. */
         MotorState comando = nastro_isEmpty( n ) ? MOTORE_OFF : MOTORE_ON;
         motore_update( &mot->motore, &mot->motoreTime, comando, step );
+        if ( motore_get_status( &mot->motore ) ) { mot->tempoOnTotale++; } else { mot->tempoOffTotale++; }
         if ( !motore_get_status( &mot->motore ) ) {
             return; /* motore spento: nessun trasporto questo passo */
         }
@@ -500,6 +640,7 @@ static void processBuffer( controllore_t *c, const char *ID, int step )
     result = genericInsert( c, destType, destID, obj, step );
     if ( result == OP_SUCCESS ) {
         object_setLocation( obj, destID );
+        segnaCompletatoSeTerminale( c, destType, destID, obj, step );
     } else {
         /* Non dovrebbe succedere (isBusy era gia' stato controllato per
          * il caso macchina), ma per sicurezza mettiamo in coda invece di
@@ -512,32 +653,53 @@ static void processBuffer( controllore_t *c, const char *ID, int step )
 /*  API PUBBLICA                                                        */
 /* ------------------------------------------------------------------ */
 
-static short int creaSensoriBuffer( controllore_t *c )
+/**
+ * @brief Aggancia un sensore buffer a un buffer già presente nella cella.
+ *
+ * PRIMA di questa versione, un SensoreBuffer veniva creato in automatico
+ * da controllore_create per OGNI buffer già presente nella cella in quel
+ * momento, senza possibilità di scegliere - incoerente con
+ * Motore/Deviatore/SensoreQualita (sempre agganciati esplicitamente).
+ * Ora un buffer senza questa chiamata semplicemente non ha nessun
+ * sensore: controllore_getPercentualeBuffer/getStatoBuffer restituiscono
+ * ERR_NOT_FOUND, e l'ammissione "buffer-aware" (Strategia 1) non ha
+ * nulla da leggere per quel buffer specifico (non blocca comunque
+ * l'ammissione, la salta soltanto).
+ */
+short int controllore_collegaSensoreBuffer( controllore_t *c, const char *bufferID )
 {
-    int n;
-    int idx;
-    char ID[IDLENGTH];
     buffer_t *b;
     bufferSensorAssoc_t *node;
     short int err;
+    char sensorID[IDLENGTH];
 
-    n = cell_getBufferCount( c->cell );
-    for ( idx = 0; idx < n; idx++ ) {
-        if ( cell_getBufferIDAt( c->cell, idx, ID ) != OP_SUCCESS ) { continue; }
-        b = cell_getBuffer( c->cell, ID );
-        if ( b == NULL ) { continue; }
+    if ( c == NULL || bufferID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    b = cell_getBuffer( c->cell, bufferID );
+    if ( b == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    if ( findBufferSensorAssoc( c, bufferID ) != NULL ) {
+        return ERR_DUPLICATE;
+    }
 
-        node = malloc( sizeof( bufferSensorAssoc_t ) );
-        if ( node == NULL ) { return ERR_ALLOC; }
+    node = malloc( sizeof( bufferSensorAssoc_t ) );
+    if ( node == NULL ) { return ERR_ALLOC; }
 
-        strncpy( node->bufferID, ID, IDLENGTH - 1 );
-        node->bufferID[IDLENGTH - 1] = '\0';
+    strncpy( node->bufferID, bufferID, IDLENGTH - 1 );
+    node->bufferID[IDLENGTH - 1] = '\0';
 
-        err = (short int) sensore_Buffer_init( &node->sensore, ID, buffer_getCapacity( b ) );
-        if ( err != OP_SUCCESS ) { free( node ); return err; }
+    err = (short int) sensore_Buffer_init( &node->sensore, bufferID, buffer_getCapacity( b ) );
+    if ( err != OP_SUCCESS ) { free( node ); return err; }
 
-        node->next = c->sensoriBuffer;
-        c->sensoriBuffer = node;
+    node->next = c->sensoriBuffer;
+    c->sensoriBuffer = node;
+
+    /* Tracciabilità (registry): come per gli altri sensori/attuatori. */
+    snprintf( sensorID, IDLENGTH, "%.16s_SB", bufferID );
+    if ( registry_add( sensorID, ENTITY_SENSOR_BUFFER, &node->sensore ) == OP_SUCCESS ) {
+        cell_attachSensor( c->cell, bufferID, sensorID );
     }
 
     return OP_SUCCESS;
@@ -546,7 +708,6 @@ static short int creaSensoriBuffer( controllore_t *c )
 controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int *errCode )
 {
     controllore_t *c;
-    short int err;
 
     if ( cell == NULL ) {
         if ( errCode != NULL ) { *errCode = ERR_NULL_PTR; }
@@ -570,14 +731,14 @@ controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int
     c->deviatori = NULL;
     c->sensoriBuffer = NULL;
     c->sensoriPresenza = NULL;
+    c->sensoriQualita = NULL;
     c->completati = 0;
 
-    err = creaSensoriBuffer( c );
-    if ( err != OP_SUCCESS ) {
-        controllore_destroy( c );
-        if ( errCode != NULL ) { *errCode = err; }
-        return NULL;
-    }
+    /* Nessun sensore creato automaticamente qui: a differenza della
+     * versione precedente (che creava un SensoreBuffer per OGNI buffer
+     * già presente nella cella), ora ogni sensore va agganciato
+     * esplicitamente con controllore_collegaSensoreBuffer, coerente con
+     * Motore/Deviatore/SensoreQualita. */
 
     if ( errCode != NULL ) { *errCode = OP_SUCCESS; }
     return c;
@@ -590,6 +751,7 @@ void controllore_destroy( controllore_t *c )
     deviatoreAssoc_t *dCur, *dNext;
     bufferSensorAssoc_t *bCur, *bNext;
     presenceSensorAssoc_t *sCur, *sNext;
+    qualitaSensorAssoc_t *qCur, *qNext;
 
     if ( c == NULL ) {
         return;
@@ -603,22 +765,32 @@ void controllore_destroy( controllore_t *c )
     for ( dCur = c->deviatori; dCur != NULL; dCur = dNext ) { dNext = dCur->next; free( dCur ); }
     for ( bCur = c->sensoriBuffer; bCur != NULL; bCur = bNext ) { bNext = bCur->next; free( bCur ); }
     for ( sCur = c->sensoriPresenza; sCur != NULL; sCur = sNext ) { sNext = sCur->next; free( sCur ); }
+    for ( qCur = c->sensoriQualita; qCur != NULL; qCur = qNext ) { qNext = qCur->next; free( qCur ); }
 
     free( c );
 }
 
-short int controllore_collegaMotore( controllore_t *c, const char *nastroID, int velocita_target, int accelerazione_target )
+short int controllore_collegaMotore( controllore_t *c, const char *targetID, int velocita_target, int accelerazione_target )
 {
     motoreAssoc_t *node;
     short int err;
+    char attuatoreID[IDLENGTH];
+    entity_type_t targetType;
 
-    if ( c == NULL || nastroID == NULL ) {
+    if ( c == NULL || targetID == NULL ) {
         return ERR_NULL_PTR;
     }
-    if ( !cell_hasNastro( c->cell, nastroID ) ) {
+    /* Un Motore puo' essere collegato a un nastro (aziona il trasporto)
+     * O a una macchina (motore della lavorazione, acceso mentre M e'
+     * occupata - vedi processMachine): qualunque altro tipo non e'
+     * supportato. */
+    if ( registry_getType( targetID, &targetType ) != OP_SUCCESS ) {
         return ERR_NOT_FOUND;
     }
-    if ( findMotoreAssoc( c, nastroID ) != NULL ) {
+    if ( targetType != ENTITY_NASTRO && targetType != ENTITY_MACHINE ) {
+        return ERR_NOT_SUPPORTED;
+    }
+    if ( findMotoreAssoc( c, targetID ) != NULL ) {
         return ERR_DUPLICATE;
     }
 
@@ -627,13 +799,14 @@ short int controllore_collegaMotore( controllore_t *c, const char *nastroID, int
         return ERR_ALLOC;
     }
 
-    strncpy( node->nastroID, nastroID, IDLENGTH - 1 );
-    node->nastroID[IDLENGTH - 1] = '\0';
+    strncpy( node->targetID, targetID, IDLENGTH - 1 );
+    node->targetID[IDLENGTH - 1] = '\0';
+    node->targetType = targetType;
 
     /* Bug: la versione precedente chiamava motore_init con soli 3
      * argomenti, ma la firma richiede anche accelerazione_desiderata
      * (aggiunta di recente a Motore.h) - non compilava. */
-    err = (short int) motore_init( &node->motore, nastroID, velocita_target, accelerazione_target );
+    err = (short int) motore_init( &node->motore, targetID, velocita_target, accelerazione_target );
     if ( err != OP_SUCCESS ) {
         free( node );
         return err;
@@ -642,9 +815,20 @@ short int controllore_collegaMotore( controllore_t *c, const char *nastroID, int
     node->motoreTime.time_off = 0;
     node->motoreTime.time_start = 0;
     node->motoreTime.time_stop = 0;
+    node->tempoOnTotale = 0;
+    node->tempoOffTotale = 0;
 
     node->next = c->motori;
     c->motori = node;
+
+    /* Tracciabilità (registry): il Motore diventa un'entità a sé
+     * (ENTITY_ACTUATOR_MOTORE) collegata al nastro/alla macchina tramite
+     * cell_attachActuator, così actuatorList lo mostra (nastro_print /
+     * machine_print) invece di restare sempre "(nessuno)". */
+    snprintf( attuatoreID, IDLENGTH, "%.16s_MO", targetID );
+    if ( registry_add( attuatoreID, ENTITY_ACTUATOR_MOTORE, &node->motore ) == OP_SUCCESS ) {
+        cell_attachActuator( c->cell, targetID, attuatoreID );
+    }
 
     return OP_SUCCESS;
 }
@@ -653,6 +837,7 @@ short int controllore_collegaDeviatore( controllore_t *c, const char *ispID, int
 {
     deviatoreAssoc_t *node;
     short int err;
+    char attuatoreID[IDLENGTH];
 
     if ( c == NULL || ispID == NULL ) {
         return ERR_NULL_PTR;
@@ -687,6 +872,83 @@ short int controllore_collegaDeviatore( controllore_t *c, const char *ispID, int
 
     node->next = c->deviatori;
     c->deviatori = node;
+
+    /* Tracciabilità (registry): come per il Motore, ma su ENTITY_ISP. */
+    snprintf( attuatoreID, IDLENGTH, "%.16s_DE", ispID );
+    if ( registry_add( attuatoreID, ENTITY_ACTUATOR_DEVIATORE, &node->deviatore ) == OP_SUCCESS ) {
+        cell_attachActuator( c->cell, ispID, attuatoreID );
+    }
+
+    return OP_SUCCESS;
+}
+
+short int controllore_collegaSensoreQualita( controllore_t *c, const char *ispID,
+                                              int dimensionX_target, int raggio_target )
+{
+    qualitaSensorAssoc_t *node;
+    short int err;
+    char sensorID[IDLENGTH];
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    if ( !cell_hasISP( c->cell, ispID ) ) {
+        return ERR_NOT_FOUND;
+    }
+    if ( findQualitaSensorAssoc( c, ispID ) != NULL ) {
+        return ERR_DUPLICATE;
+    }
+
+    node = malloc( sizeof( qualitaSensorAssoc_t ) );
+    if ( node == NULL ) {
+        return ERR_ALLOC;
+    }
+
+    strncpy( node->ispID, ispID, IDLENGTH - 1 );
+    node->ispID[IDLENGTH - 1] = '\0';
+
+    /* Guasto disabilitato di default: si attiva esplicitamente con
+     * controllore_impostaGuastoQualita (sez. 5.3 del progetto). */
+    err = (short int) sensore_qualita_init( &node->sensore, ispID, &node->guasto, false,
+                                             dimensionX_target, raggio_target );
+    if ( err != OP_SUCCESS ) {
+        free( node );
+        return err;
+    }
+
+    node->next = c->sensoriQualita;
+    c->sensoriQualita = node;
+
+    /* Tracciabilità (registry): come per il SensoreBuffer, ma su ENTITY_ISP. */
+    snprintf( sensorID, IDLENGTH, "%.16s_SQ", ispID );
+    if ( registry_add( sensorID, ENTITY_SENSOR_QUALITA, &node->sensore ) == OP_SUCCESS ) {
+        cell_attachSensor( c->cell, ispID, sensorID );
+    }
+
+    return OP_SUCCESS;
+}
+
+short int controllore_impostaGuastoQualita( controllore_t *c, const char *ispID,
+                                             bool abilitato, int time_error, int time_ok )
+{
+    qualitaSensorAssoc_t *node;
+    short int result;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+
+    node = findQualitaSensorAssoc( c, ispID );
+    if ( node == NULL ) {
+        return ERR_NOT_FOUND; /* nessun sensore agganciato a questa ISP */
+    }
+
+    result = sensore_qualita_imposta_guasto( &node->guasto, time_error, time_ok );
+    if ( result != OP_SUCCESS ) {
+        return result;
+    }
+
+    node->guasto.malfunzionamento_abilitato = abilitato;
 
     return OP_SUCCESS;
 }
@@ -769,6 +1031,47 @@ int controllore_getStatoBuffer( const controllore_t *c, const char *bufferID )
     return get_status_buffer( &sAssoc->sensore );
 }
 
+/**
+ * @brief Tempo cumulativo (in passi di simulazione) in cui il motore
+ *        collegato a targetID (un nastro o una macchina) è stato ACCESO,
+ *        su tutta la simulazione da quando è stato agganciato.
+ * @param c Puntatore al controllore.
+ * @param targetID ID del nastro o della macchina.
+ * @return Il tempo cumulativo, oppure ERR_NULL_PTR/ERR_NOT_FOUND (vedi
+ *         errors.h) se non trovato.
+ */
+long controllore_getTempoMotoreOn( const controllore_t *c, const char *targetID )
+{
+    motoreAssoc_t *mot;
+
+    if ( c == NULL || targetID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    mot = findMotoreAssoc( (controllore_t *) c, targetID );
+    if ( mot == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return mot->tempoOnTotale;
+}
+
+/**
+ * @brief Come controllore_getTempoMotoreOn, ma per il tempo cumulativo
+ *        in cui il motore è stato SPENTO.
+ */
+long controllore_getTempoMotoreOff( const controllore_t *c, const char *targetID )
+{
+    motoreAssoc_t *mot;
+
+    if ( c == NULL || targetID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    mot = findMotoreAssoc( (controllore_t *) c, targetID );
+    if ( mot == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return mot->tempoOffTotale;
+}
+
 int controllore_segnalaArrivo( controllore_t *c, const char *bufferIngressoID, int time_on, int presenza )
 {
     presenceSensorAssoc_t *sAssoc;
@@ -777,9 +1080,9 @@ int controllore_segnalaArrivo( controllore_t *c, const char *bufferIngressoID, i
         return ERR_NULL_PTR;
     }
 
-    sAssoc = findOrCreatePresenceSensorAssoc( c, bufferIngressoID );
+    sAssoc = findPresenceSensorAssoc( c, bufferIngressoID );
     if ( sAssoc == NULL ) {
-        return ERR_ALLOC;
+        return ERR_NOT_FOUND; /* nessun sensore agganciato con controllore_collegaSensorePresenza */
     }
 
     return get_status_presenza( &sAssoc->sensore, time_on, presenza );

@@ -24,20 +24,31 @@
  *      "buffer-aware" (Strategia 1, sez. 4.1) basata sulla lettura del
  *      SensoreBuffer associato al buffer a valle di una macchina.
  *
- * SENSORI: alla creazione, il controllore istanzia automaticamente un
- * SensoreBuffer per ogni buffer già presente nella cella, e lo aggiorna
- * lui stesso (aggiornamento_status) ad ogni inserimento/rimozione che fa
- * passare attraverso genericInsert/processBuffer — quindi resta sempre
- * sincronizzato col contenuto reale del buffer, senza bisogno che
- * nessun altro modulo se ne ricordi. Vedi controllore_getPercentualeBuffer
- * / controllore_getStatoBuffer per leggerlo dall'esterno (es. per log).
+ * SENSORI: nessuno viene creato automaticamente. Ogni sensore/attuatore
+ * (Motore, Deviatore, SensoreBuffer, SensorePresenza, SensoreQualita) va
+ * agganciato esplicitamente con la relativa funzione
+ * controllore_collegaX, PRIMA di poterlo usare — un'entità senza nulla
+ * agganciato funziona comunque (macchina/nastro/ISP restano puri timer,
+ * un buffer senza sensore semplicemente non è monitorato). Vedi
+ * controllore_collegaSensoreBuffer, controllore_collegaSensorePresenza,
+ * controllore_collegaSensoreQualita, controllore_collegaMotore,
+ * controllore_collegaDeviatore.
  *
- * S_Presenza non è (ancora) usato internamente dal controllore: la sua
- * unica applicazione prevista dal progetto è rilevare l'arrivo di un
- * NUOVO oggetto al buffer di ingresso (sez. 5.1), ma qui non esiste
- * ancora nulla che generi arrivi dall'esterno (sarà compito del
- * parser/main). Viene comunque esposto con controllore_segnalaArrivo,
- * pronto per essere chiamato dal main una volta scritto.
+ * Un SensoreBuffer agganciato viene aggiornato automaticamente
+ * (aggiornamento_status) ad ogni inserimento/rimozione che passa
+ * attraverso genericInsert/processBuffer — quindi resta sempre
+ * sincronizzato col contenuto reale del buffer una volta agganciato,
+ * senza bisogno che nessun altro modulo se ne ricordi. Vedi
+ * controllore_getPercentualeBuffer/controllore_getStatoBuffer per
+ * leggerlo dall'esterno (es. per log) — restituiscono ERR_NOT_FOUND se
+ * nessun sensore è stato agganciato per quel buffer.
+ *
+ * S_Presenza: l'unica applicazione prevista dal progetto è rilevare
+ * l'arrivo di un NUOVO oggetto al buffer di ingresso (sez. 5.1). Va
+ * agganciato con controllore_collegaSensorePresenza PRIMA di chiamare
+ * controllore_segnalaArrivo per lo stesso ID (che altrimenti fallisce
+ * con ERR_NOT_FOUND) — pensato per essere richiamato dal main/parser una
+ * volta scritta la generazione degli arrivi.
  */
 
 #ifndef CONTROLLORE_H
@@ -79,19 +90,27 @@ controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int
 void controllore_destroy( controllore_t *c );
 
 /**
- * @brief Collega un Motore a un nastro già presente nella cella.
+ * @brief Collega un Motore a un nastro O a una macchina già presente
+ *        nella cella.
  *
- * Da qui in poi controllore_step accenderà/spegnerà questo motore in
- * base al contenuto del nastro e lo aggiornerà ogni passo (rampa,
- * temperatura). Un nastro senza motore collegato continua a funzionare
- * come prima (nessun obbligo di collegarne uno).
+ * Da qui in poi controllore_step accenderà/spegnerà questo motore e lo
+ * aggiornerà ogni passo (rampa, temperatura):
+ *   - su un NASTRO, acceso quando c'è qualcosa da trasportare, spento
+ *     quando è vuoto — e finché è spento, blocca i nuovi ingressi
+ *     (vedi processNastro).
+ *   - su una MACCHINA, acceso mentre sta lavorando un pezzo, spento
+ *     quando è libera — qui invece NON blocca la lavorazione: riflette
+ *     solo lo stato della macchina, non lo condiziona.
+ * Un'entità senza motore collegato continua a funzionare come prima
+ * (nessun obbligo di collegarne uno).
  * @param c Puntatore al controllore.
- * @param nastroID ID del nastro (deve già esistere nella cella).
+ * @param targetID ID del nastro o della macchina (deve già esistere nella cella).
  * @param velocita_target Velocità target del motore (vedi Motore.h).
  * @return OP_SUCCESS se collegato, un codice ERR_* (vedi errors.h) altrimenti,
- *         incluso ERR_NOT_FOUND se nastroID non esiste nella cella.
+ *         incluso ERR_NOT_FOUND se targetID non esiste nella cella,
+ *         ERR_NOT_SUPPORTED se targetID non è né un nastro né una macchina.
  */
-short int controllore_collegaMotore( controllore_t *c, const char *nastroID, int velocita_target, int accelerazione_target );
+short int controllore_collegaMotore( controllore_t *c, const char *targetID, int velocita_target, int accelerazione_target );
 
 /**
  * @brief Collega un Deviatore a una ISP già presente nella cella.
@@ -109,6 +128,71 @@ short int controllore_collegaMotore( controllore_t *c, const char *nastroID, int
  *         incluso ERR_NOT_FOUND se ispID non esiste nella cella.
  */
 short int controllore_collegaDeviatore( controllore_t *c, const char *ispID, int tempo_minimo_commutazioni );
+
+/**
+ * @brief Aggancia un sensore buffer a un buffer già presente nella cella.
+ *
+ * Senza questa chiamata, il buffer non ha nessun sensore:
+ * controllore_getPercentualeBuffer/getStatoBuffer restituiscono
+ * ERR_NOT_FOUND per quel buffer, e l'ammissione "buffer-aware"
+ * (Strategia 1) salta il controllo di soglia per lui (non blocca comunque
+ * l'ammissione, la tratta semplicemente come "nessun limite noto").
+ * @param c Puntatore al controllore.
+ * @param bufferID ID del buffer (deve già esistere nella cella).
+ * @return OP_SUCCESS se agganciato, un codice ERR_* (vedi errors.h) altrimenti,
+ *         incluso ERR_NOT_FOUND se bufferID non esiste nella cella, ERR_DUPLICATE
+ *         se questo buffer ha già un sensore agganciato.
+ */
+short int controllore_collegaSensoreBuffer( controllore_t *c, const char *bufferID );
+
+/**
+ * @brief Aggancia un sensore di presenza a un ID di ingresso.
+ *
+ * Va chiamata PRIMA di usare controllore_segnalaArrivo per lo stesso ID:
+ * senza un sensore agganciato, controllore_segnalaArrivo fallisce con
+ * ERR_NOT_FOUND. L'ID non deve necessariamente esistere già nella cella
+ * come buffer (il sensore è indipendente dal buffer vero e proprio).
+ * @param c Puntatore al controllore.
+ * @param ID Identificativo del punto di ingresso da monitorare (es. "B1").
+ * @return OP_SUCCESS se agganciato, un codice ERR_* (vedi errors.h) altrimenti,
+ *         incluso ERR_DUPLICATE se questo ID ha già un sensore agganciato.
+ */
+short int controllore_collegaSensorePresenza( controllore_t *c, const char *ID );
+
+/**
+ * @brief Aggancia un sensore di qualità a una ISP già presente nella cella.
+ *
+ * Senza questa chiamata, una ISP è un puro timer (isp_admit/
+ * isp_tryRelease) e non giudica mai la qualità di quello che passa: una
+ * ISP "passacarte" (es. la prima di un layout a due stadi, che serve
+ * solo a far scorrere il pezzo verso la stazione successiva) può
+ * restare senza sensore agganciato, senza bisogno di nessun target
+ * fittizio.
+ * @param c Puntatore al controllore.
+ * @param ispID ID della ISP (deve già esistere nella cella).
+ * @param dimensionX_target Valore di riferimento per la dimensione, vedi S_Qualita.h.
+ * @param raggio_target Valore di riferimento per il raggio, vedi S_Qualita.h.
+ * @return OP_SUCCESS se agganciato, un codice ERR_* (vedi errors.h) altrimenti,
+ *         incluso ERR_NOT_FOUND se ispID non esiste nella cella, ERR_DUPLICATE
+ *         se questa ISP ha già un sensore agganciato.
+ */
+short int controllore_collegaSensoreQualita( controllore_t *c, const char *ispID,
+                                              int dimensionX_target, int raggio_target );
+
+/**
+ * @brief Abilita/disabilita e configura il guasto simulato del sensore
+ *        di qualità agganciato a una ISP (sez. 5.3 del progetto).
+ * @param c Puntatore al controllore.
+ * @param ispID ID della ISP il cui sensore va configurato.
+ * @param abilitato true per abilitare il guasto.
+ * @param time_error Passi di funzionamento OK prima del guasto (deve essere > 0).
+ * @param time_ok Passi di guasto prima di tornare OK (deve essere > 0).
+ * @return OP_SUCCESS se impostato, ERR_NOT_FOUND se questa ISP non ha nessun
+ *         sensore agganciato (vedi controllore_collegaSensoreQualita),
+ *         un altro codice ERR_* (vedi errors.h) altrimenti.
+ */
+short int controllore_impostaGuastoQualita( controllore_t *c, const char *ispID,
+                                             bool abilitato, int time_error, int time_ok );
 
 /**
  * @brief Esegue un passo di controllo: scandisce tutte le entità della
@@ -139,6 +223,24 @@ int controllore_getPercentualeBuffer( const controllore_t *c, const char *buffer
  * @return Lo stato, oppure ERR_NULL_PTR/ERR_NOT_FOUND se non trovato.
  */
 int controllore_getStatoBuffer( const controllore_t *c, const char *bufferID );
+
+/**
+ * @brief Tempo cumulativo (in passi di simulazione) in cui il motore
+ *        collegato a targetID (un nastro o una macchina, vedi
+ *        controllore_collegaMotore) è stato ACCESO, su tutta la
+ *        simulazione da quando è stato agganciato.
+ * @param c Puntatore al controllore.
+ * @param targetID ID del nastro o della macchina.
+ * @return Il tempo cumulativo, oppure ERR_NULL_PTR/ERR_NOT_FOUND (vedi
+ *         errors.h) se nessun motore è agganciato a targetID.
+ */
+long controllore_getTempoMotoreOn( const controllore_t *c, const char *targetID );
+
+/**
+ * @brief Come controllore_getTempoMotoreOn, ma per il tempo cumulativo
+ *        in cui il motore è stato SPENTO.
+ */
+long controllore_getTempoMotoreOff( const controllore_t *c, const char *targetID );
 
 /**
  * @brief Inoltra una lettura al sensore di presenza associato a
