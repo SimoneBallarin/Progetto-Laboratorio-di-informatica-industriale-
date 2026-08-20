@@ -23,7 +23,8 @@ int sensore_qualita_init(SensoreQualita *s, const char *ID,
     s->anomalie_rilevate = 0;
     s->dimensionX_target = dimensionX_target;
     s->raggio_target = raggio_target;
-
+    s->A = 0;
+    s->B = 0;
 
     m->last_lettura = 0;
     m->time_since_last_change = 0;
@@ -77,7 +78,7 @@ int get_status_qualita(const SensoreQualita *s)
     return s->status;
 }
 
-char get_Material(object_t *object, const SensoreQualita *s)
+char get_Material(object_t *object, SensoreQualita *s)
 {
     if (s == NULL || object == NULL) return ERR_NULL_PTR;
     
@@ -89,8 +90,8 @@ char get_Material(object_t *object, const SensoreQualita *s)
     int p=5;
     if (object -> type == 'A') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[0]); e = 100*p/materiale;}
     if (object -> type == 'B') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[1]); e = 100*p/materiale;}
-    if((materiale - e)<= ConfrontoA && ConfrontoA <= (materiale + e)){ return 'A';}
-    else if((materiale - e)<= ConfrontoB && ConfrontoB <= (materiale + e)){return 'B';}
+    if((materiale - e)<= ConfrontoA && ConfrontoA <= (materiale + e)){ s->A++; return 'A';}
+    else if((materiale - e)<= ConfrontoB && ConfrontoB <= (materiale + e)){ s->B++; return 'B';}
     else {return 0;}
 }
 
@@ -118,8 +119,8 @@ int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
 if(s->status == QUALITA_OK){
     if (s->dimensionX_target == 0 || s->raggio_target == 0 ) {return ERR_NOT_SUPPORTED;} /* target non configurato per questo materiale */
 
-    percentualeX = fabs(object->dimensionX - s->dimensionX_target) * 100 /s->dimensionX_target;
-    percentualeR = fabs(object->raggio - s->raggio_target) * 100 /s->raggio_target;
+    percentualeX = (int)fabs(object->dimensionX - s->dimensionX_target) * 100 /s->dimensionX_target;
+    percentualeR = (int)fabs(object->raggio - s->raggio_target) * 100 /s->raggio_target;
     if (percentualeX <= 5 && percentualeR <= 5  ) {
         s->risultato_ultima_lettura = CONFORME;
     } 
@@ -160,3 +161,5 @@ long get_anomalie_rilevate(const SensoreQualita *s)
     if (s == NULL) return ERR_NULL_PTR;
     return s->anomalie_rilevate;
 }
+
+

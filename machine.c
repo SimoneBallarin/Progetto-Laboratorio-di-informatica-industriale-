@@ -244,16 +244,17 @@ short int machine_admit( machine_t *m, object_t *object, int step_corrente )
  */
 static double fattore_rumore( double tolleranza )
 {
-    double r; /* uniforme in [0.0, 1.0) */
+    double r = rand()%10; //scelta casuale per la tolleranza da applicare
 
     if ( tolleranza <= 0.0 ) {
         return 1.0;
     }
 
-    r = (double) rand() / ( (double) RAND_MAX + 1.0 );
-
-    /* scala r da [0,1) a [-tolleranza, +tolleranza], poi centra su 1.0 */
-    return 1.0 + ( ( r * 2.0 * tolleranza ) - tolleranza );
+    if(r==5){return tolleranza*2;}
+    if(r==6){return -tolleranza*2;}
+    else{return tolleranza*(rand()%3-1);}
+    
+    
 }
 
 object_t *machine_tryRelease( machine_t *m, int step_corrente )
@@ -277,8 +278,8 @@ object_t *machine_tryRelease( machine_t *m, int step_corrente )
      * separatamente (non lo stesso rumore applicato a entrambi), cosi'
      * un pezzo puo' uscire con la dimensione fuori tolleranza ma il
      * raggio nella norma, o viceversa. */
-    nuova_dimensione = (object_getDimensionX( result )-Dlavorato) * fattore_rumore( m->tolleranza_lavorazione );
-    nuovo_raggio      = (object_getRaggio( result )-Rlavorato) * fattore_rumore( m->tolleranza_lavorazione );
+    nuova_dimensione = (object_getDimensionX( result )-Dlavorato) + (object_getDimensionX( result )-Dlavorato) * fattore_rumore( m->tolleranza_lavorazione );
+    nuovo_raggio      = (object_getRaggio( result )-Rlavorato) + (object_getRaggio( result )-Rlavorato) * fattore_rumore( m->tolleranza_lavorazione );
 
     /* dimensione e raggio non hanno senso negativi (object_setRaggio
      * richiede >= 0): un rumore che li spingerebbe sotto zero viene
@@ -316,6 +317,18 @@ void machine_print( const machine_t *m )
 
     printf( "  output: " );
     idCur = m->outputList;
+    if ( idCur == NULL ) { printf( "(nessuno)" ); }
+    while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
+    printf( "\n" );
+
+    printf( "  sensori: " );
+    idCur = m->sensorList;
+    if ( idCur == NULL ) { printf( "(nessuno)" ); }
+    while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
+    printf( "\n" );
+
+    printf( "  attuatori: " );
+    idCur = m->actuatorList;
     if ( idCur == NULL ) { printf( "(nessuno)" ); }
     while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
     printf( "\n" );

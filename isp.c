@@ -9,10 +9,9 @@
 
 #include "isp.h"
 
-isp_t *isp_create( const char *ID, int tempo_controllo, int dimensionX_target, int raggio_target, short int *errCode )
+isp_t *isp_create( const char *ID, int tempo_controllo, short int *errCode )
 {
     isp_t *i;
-    int localErr;
 
     if ( ID == NULL ) {
         if ( errCode != NULL ) { *errCode = ERR_NULL_PTR; }
@@ -44,19 +43,6 @@ isp_t *isp_create( const char *ID, int tempo_controllo, int dimensionX_target, i
     i->outputList = NULL;
     i->sensorList = NULL;
     i->actuatorList = NULL;
-
-    /* Guasto disabilitato di default: si attiva esplicitamente con
-     * isp_impostaGuasto (sez. 5.3 del progetto).
-     * Bug corretto: sensore_qualita_init si aspetta due target scalari
-     * (dimensionX_target, raggio_target), non piu' un array target[3]:
-     * la vecchia chiamata passava un array 'target' che non era nemmeno
-     * piu' un parametro di questa funzione - non compilava. */
-    localErr = sensore_qualita_init( &i->sensore, ID, &i->guasto, false, dimensionX_target, raggio_target );
-    if ( localErr != OP_SUCCESS ) {
-        free( i );
-        if ( errCode != NULL ) { *errCode = localErr; }
-        return NULL;
-    }
 
     if ( errCode != NULL ) { *errCode = OP_SUCCESS; }
 
@@ -207,24 +193,6 @@ bool isp_hasActuator( const isp_t *i, const char *ID )
     return idlist_contains( i->actuatorList, ID );
 }
 
-short int isp_impostaGuasto( isp_t *i, bool abilitato, int time_error, int time_ok )
-{
-    short int result;
-
-    if ( i == NULL ) {
-        return ERR_NULL_PTR;
-    }
-
-    result = sensore_qualita_imposta_guasto( &i->guasto, time_error, time_ok );
-    if ( result != OP_SUCCESS ) {
-        return result;
-    }
-
-    i->guasto.malfunzionamento_abilitato = abilitato;
-
-    return OP_SUCCESS;
-}
-
 short int isp_admit( isp_t *i, object_t *object, int step_corrente )
 {
     if ( i == NULL || object == NULL ) {
@@ -241,10 +209,9 @@ short int isp_admit( isp_t *i, object_t *object, int step_corrente )
     return OP_SUCCESS;
 }
 
-object_t *isp_tryRelease( isp_t *i, int step_corrente, TipoQualita *outEsito )
+object_t *isp_tryRelease( isp_t *i, int step_corrente )
 {
     object_t *result;
-    int esito;
 
     if ( i == NULL || i->stato == ISP_LIBERA ) {
         return NULL;
@@ -253,20 +220,14 @@ object_t *isp_tryRelease( isp_t *i, int step_corrente, TipoQualita *outEsito )
         return NULL; /* controllo non ancora completato */
     }
 
-    esito = get_qualita( &i->sensore, &i->guasto, step_corrente, i->oggetto_in_controllo, true );
-
+    /* Nessun calcolo di qualita' qui: la ISP e' un puro timer, come
+     * machine_t. Se un sensore di qualita' e' stato agganciato dal
+     * Controllore (controllore_collegaSensoreQualita), sara' lui a
+     * chiamare get_qualita usando il proprio sensore, dopo aver ricevuto
+     * l'oggetto da questa funzione. */
     result = i->oggetto_in_controllo;
     i->oggetto_in_controllo = NULL;
     i->stato = ISP_LIBERA;
-
-    if ( outEsito != NULL ) {
-        /* get_qualita puo' restituire un codice ERR_* (negativo) solo in
-         * casi anomali di configurazione (es. target non impostato per
-         * questo materiale): per non bloccare la ISP l'oggetto viene
-         * comunque rilasciato, trattato convenzionalmente come SCARTO.
-         * Da confermare col gruppo se serve un comportamento diverso. */
-        *outEsito = ( esito >= 0 ) ? (TipoQualita) esito : SCARTO;
-    }
 
     return result;
 }
@@ -292,6 +253,18 @@ void isp_print( const isp_t *i )
 
     printf( "  output: " );
     idCur = i->outputList;
+    if ( idCur == NULL ) { printf( "(nessuno)" ); }
+    while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
+    printf( "\n" );
+
+    printf( "  sensori: " );
+    idCur = i->sensorList;
+    if ( idCur == NULL ) { printf( "(nessuno)" ); }
+    while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
+    printf( "\n" );
+
+    printf( "  attuatori: " );
+    idCur = i->actuatorList;
     if ( idCur == NULL ) { printf( "(nessuno)" ); }
     while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
     printf( "\n" );
