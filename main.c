@@ -184,6 +184,9 @@ static void genera_arrivi_esempio( cell_t *cell, controllore_t *ctrl, int step_a
     controllore_segnalaArrivo( ctrl, "B1", 0, 0 );
 }
 
+
+// INIZIO MAIN //
+
 int main( void )
 {
     cell_t *cell;
@@ -228,14 +231,18 @@ int main( void )
              } else {
                 tipo = 'B';
               }
-            double scarto_pct = ((rand() % 5) - 2)/100;
-            double dimensionX = DIMENSIONX_TARGET_ISP1 + (DIMENSIONX_TARGET_ISP1*( 1.0 + scarto_pct )-DIMENSIONX_TARGET_ISP1);
-            double raggio     = RAGGIO_TARGET_ISP1 + (RAGGIO_TARGET_ISP1 * ( 1.0 + scarto_pct )-RAGGIO_TARGET_ISP1);
+            double  scarto_pct = ((rand() % 5) - 2);
+            double dimensionX = DIMENSIONX_TARGET_ISP1 + ((DIMENSIONX_TARGET_ISP1*scarto_pct )/100);
+            double raggio     = RAGGIO_TARGET_ISP1 + ((RAGGIO_TARGET_ISP1 * scarto_pct )/100);
 
             snprintf( id, sizeof( id ), "P%d", idx + 1 );
             genera_arrivi_esempio( cell, ctrl, idx, id, tipo, dimensionX, raggio );
         }
     }
+
+    printf( "=== Stato iniziale (dopo la creazione degli oggetti, prima di far girare la simulazione) ===\n" );
+    controllore_print( ctrl );
+    printf( "\n" );
 
     for ( step = 0; step < N_STEP_SIMULAZIONE; step++ ) {
         controllore_step( ctrl, step );
@@ -246,6 +253,13 @@ int main( void )
     printf( "Completati: %ld, ancora in coda (pending): %d\n",
             controllore_getCompletati( ctrl ), controllore_getPendingCount( ctrl ) );
 
+
+
+
+
+
+    // STATISTICHE //
+
     /* NB: la pulizia degli object_t inseriti resta da fare (nessun
      * modulo del progetto li libera automaticamente): qui li lasciamo
      * volutamente, dato che serve prima decidere chi ne è responsabile
@@ -254,9 +268,6 @@ int main( void )
 
     controllore_destroy( ctrl );
     cell_destroy( cell );
-
-// STATISTICHE //
-
 
     return 0;
 }
