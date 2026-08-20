@@ -35,7 +35,9 @@ int get_status_presenza(SensorePresenza *s, int time_on, int presenza)
      * OPPURE se il segnale diretto di presenza e' attivo.
      * (era 'presente' non dichiarata nella versione originale: refuso
      * del parametro 'presenza') */
-    presente = (time_on >= tempo_atteso) || (presenza == 1);
+     presente = (time_on >= tempo_atteso) || (presenza == 1);
+
+    //presente = presenza ;
 
     fronte_di_salita  = (presente == 1 && s->status_precedente == 0);
     fronte_di_discesa = (presente == 0 && s->status_precedente == 1);
