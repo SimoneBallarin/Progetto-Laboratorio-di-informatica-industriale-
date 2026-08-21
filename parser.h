@@ -75,6 +75,19 @@ int parser_costruisciCella( cell_t *cell, const char *path, short int *errCode )
 int parser_collegaAttuatori( controllore_t *ctrl, const char *path, short int *errCode );
 
 /**
+ * @brief Legge il file di configurazione impianto e collega, tramite
+ *        controllore_collegaSensoreQualita, un sensore di qualita' a
+ *        ogni ISP la cui riga specifica target > 0 (le ISP "passacarte"
+ *        con DIMX_TARGET=0 e RAGGIO_TARGET=0 vengono saltate: non fanno
+ *        nessun controllo qualita', per design - vedi isp.h).
+ * @param ctrl Controllore gia' creato (controllore_create).
+ * @param path Percorso del file di configurazione impianto.
+ * @param errCode puntatore opzionale (puo' essere NULL).
+ * @return Numero di sensori di qualita' collegati con successo.
+ */
+int parser_collegaSensoriQualita( controllore_t *ctrl, const char *path, short int *errCode );
+
+/**
  * @brief Legge il file oggetti e li inserisce nel buffer di ingresso
  *        indicato, segnalando ogni arrivo al controllore.
  *

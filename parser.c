@@ -345,6 +345,72 @@ int parser_collegaAttuatori( controllore_t *ctrl, const char *path, short int *e
 }
 
 /* ---------------------------------------------------------------------
+ * parser_collegaSensoriQualita
+ * --------------------------------------------------------------------- */
+
+int parser_collegaSensoriQualita( controllore_t *ctrl, const char *path, short int *errCode )
+{
+    int collegati = 0;
+
+    if ( ctrl == NULL || path == NULL ) {
+        if ( errCode ) *errCode = ERR_NULL_PTR;
+        return 0;
+    }
+
+    FILE *f = fopen( path, "r" );
+    if ( f == NULL ) {
+        fprintf( stderr, "[parser] impossibile aprire il file di configurazione '%s'\n", path );
+        if ( errCode ) *errCode = ERR_NOT_FOUND;
+        return 0;
+    }
+
+    char raw_line[MAX_LINE_LEN];
+    char line_copy[MAX_LINE_LEN];
+    int line_no = 0;
+
+    while ( fgets( raw_line, sizeof( raw_line ), f ) ) {
+        line_no++;
+        trim_line( raw_line );
+        if ( raw_line[0] == '\0' ) continue;
+
+        strncpy( line_copy, raw_line, MAX_LINE_LEN - 1 );
+        line_copy[MAX_LINE_LEN - 1] = '\0';
+
+        char *tokens[16];
+        int n = split_csv( line_copy, tokens, 16 );
+        if ( n == 0 || strcmp( tokens[0], "ISP" ) != 0 ) continue;
+
+        char id[IDLENGTH] = "";
+        int dimx_target = 0, raggio_target = 0;
+        int has_id = 0;
+
+        for ( int i = 1; i < n; i++ ) {
+            char key[32], value[32];
+            if ( !split_key_value( tokens[i], key, value, sizeof( value ) ) ) continue;
+            if ( strcmp( key, "ID" ) == 0 ) { strncpy( id, value, IDLENGTH - 1 ); has_id = 1; }
+            else if ( strcmp( key, "DIMX_TARGET" ) == 0 ) { dimx_target = atoi( value ); }
+            else if ( strcmp( key, "RAGGIO_TARGET" ) == 0 ) { raggio_target = atoi( value ); }
+        }
+        if ( !has_id ) continue;
+
+        /* ISP "passacarte" (nessun controllo qualita' reale): si salta,
+         * per design - vedi isp.h. */
+        if ( dimx_target <= 0 || raggio_target <= 0 ) continue;
+
+        short int err = controllore_collegaSensoreQualita( ctrl, id, dimx_target, raggio_target );
+        if ( err != OP_SUCCESS ) {
+            fprintf( stderr, "[parser riga %d] SensoreQualita su '%s': errore (codice %d), riga scartata\n",
+                     line_no, id, err );
+            continue;
+        }
+        collegati++;
+    }
+
+    fclose( f );
+    if ( errCode ) *errCode = OP_SUCCESS;
+    return collegati;
+}
+/* ---------------------------------------------------------------------
  * parser_caricaOggetti
  * --------------------------------------------------------------------- */
 
