@@ -125,6 +125,10 @@ int main( void )
     /* 2. Motore/Deviatore dal file di configurazione. */
     attuatori_collegati = parser_collegaAttuatori( ctrl, CONFIG_PATH, &err );
     int sensori_qualita = parser_collegaSensoriQualita( ctrl, CONFIG_PATH, &err );
+    int sensori_buffer = parser_collegaSensoriBuffer( ctrl, CONFIG_PATH, &err );
+        printf( "Sensori di buffer collegati: %d\n", sensori_buffer );
+    int sensori_presenza = parser_collegaSensoriPresenza( ctrl, CONFIG_PATH, &err );
+    printf( "Sensori di presenza collegati: %d\n", sensori_presenza );
     printf( "Sensori di qualita' collegati: %d\n", sensori_qualita );
     printf( "Attuatori collegati: %d\n", attuatori_collegati );
     if ( attuatori_collegati == 0 ) {

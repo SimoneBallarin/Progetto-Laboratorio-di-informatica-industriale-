@@ -75,6 +75,27 @@ int parser_costruisciCella( cell_t *cell, const char *path, short int *errCode )
 int parser_collegaAttuatori( controllore_t *ctrl, const char *path, short int *errCode );
 
 /**
+ * @brief Legge il file di configurazione impianto e aggancia un
+ *        SensoreBuffer (tramite controllore_collegaSensoreBuffer) a
+ *        ogni buffer trovato in una riga BUFFER. Necessario: da questa
+ *        versione di Controllore.c i sensori di buffer NON vengono piu'
+ *        creati automaticamente da controllore_create.
+ * @return Numero di sensori di buffer collegati con successo.
+ */
+int parser_collegaSensoriBuffer( controllore_t *ctrl, const char *path, short int *errCode );
+
+/**
+ * @brief Legge il file di configurazione impianto e aggancia un
+ *        SensorePresenza (tramite controllore_collegaSensorePresenza) a
+ *        ogni ID trovato in una riga INGRESSO,ID=... . Necessario: da
+ *        questa versione di Controllore.c, controllore_segnalaArrivo
+ *        fallisce con ERR_NOT_FOUND se nessuno ha prima agganciato un
+ *        sensore di presenza a quell'ID.
+ * @return Numero di sensori di presenza collegati con successo.
+ */
+int parser_collegaSensoriPresenza( controllore_t *ctrl, const char *path, short int *errCode );
+
+/**
  * @brief Legge il file di configurazione impianto e collega, tramite
  *        controllore_collegaSensoreQualita, un sensore di qualita' a
  *        ogni ISP la cui riga specifica target > 0 (le ISP "passacarte"
@@ -147,7 +168,15 @@ int parser_caricaScenario( const char *path, ScenarioConfig *out, short int *err
  * @return OP_SUCCESS se applicato, un codice ERR_* (vedi errors.h)
  *         altrimenti (es. ERR_NOT_FOUND se guasto_isp_id non esiste).
  */
-short int parser_applicaScenario( cell_t *cell, const ScenarioConfig *scenario );
+/**
+ * @brief Applica una ScenarioConfig gia' letta: chiama
+ *        controllore_impostaGuastoQualita sull'ISP indicata da
+ *        guasto_isp_id. Richiede che un SensoreQualita sia GIA' stato
+ *        agganciato a quella ISP con parser_collegaSensoriQualita,
+ *        altrimenti restituisce ERR_NOT_FOUND.
+ */
+short int parser_applicaScenario( controllore_t *ctrl, const ScenarioConfig *scenario );
+
 /**
  * @brief Valori di simulazione e target di generazione, letti da file
  *        invece che da #define fissi nel main: dimensioni dei buffer
