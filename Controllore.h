@@ -243,6 +243,64 @@ long controllore_getTempoMotoreOn( const controllore_t *c, const char *targetID 
 long controllore_getTempoMotoreOff( const controllore_t *c, const char *targetID );
 
 /**
+ * @brief Letture totali del sensore di qualità agganciato a un'ISP
+ *        (vedi controllore_collegaSensoreQualita).
+ * @param c Puntatore al controllore.
+ * @param ispID ID dell'ISP.
+ * @return Il conteggio, oppure ERR_NULL_PTR/ERR_NOT_FOUND (vedi
+ *         errors.h) se nessun sensore di qualità è agganciato a ispID.
+ */
+long controllore_getLettureQualita( const controllore_t *c, const char *ispID );
+
+/**
+ * @brief Anomalie rilevate dal sensore di qualità agganciato a un'ISP
+ *        (letture avvenute durante un malfunzionamento simulato, vedi
+ *        controllore_impostaGuastoQualita).
+ */
+long controllore_getAnomalieQualita( const controllore_t *c, const char *ispID );
+
+/**
+ * @brief Copia in out[3] i conteggi CONFORME/RIVALUTAZIONE/SCARTO del
+ *        sensore di qualità agganciato a un'ISP.
+ * @param c Puntatore al controllore.
+ * @param ispID ID dell'ISP.
+ * @param out Array di almeno 3 long, allocato dal chiamante.
+ * @return OP_SUCCESS se copiato, ERR_NULL_PTR/ERR_NOT_FOUND (vedi
+ *         errors.h) altrimenti (out non viene toccato in quel caso).
+ */
+short int controllore_getTipoLettureQualita( const controllore_t *c, const char *ispID, long out[3] );
+
+/**
+ * @brief Numero di pezzi riconosciuti come materiale 'A' (rispettivamente
+ *        'B') da get_Material, sul sensore di qualità agganciato a
+ *        un'ISP (vedi Controllore.c/processISP). get_Material viene
+ *        chiamata per ogni oggetto rilasciato da una ISP con sensore
+ *        agganciato, indipendentemente dal numero di uscite: su una ISP
+ *        a singola uscita (es. ISP1) serve solo a popolare questi
+ *        contatori, mentre su una ISP con 4 uscite (es. ISP2) il
+ *        risultato viene usato anche per scegliere tra le due uscite
+ *        "conforme".
+ */
+long controllore_getMaterialeA( const controllore_t *c, const char *ispID );
+long controllore_getMaterialeB( const controllore_t *c, const char *ispID );
+
+/**
+ * @brief Letture totali del sensore di presenza agganciato a un ID
+ *        (vedi controllore_collegaSensorePresenza).
+ * @param c Puntatore al controllore.
+ * @param ID ID a cui è agganciato il sensore (es. "B1").
+ * @return Il conteggio, oppure ERR_NULL_PTR/ERR_NOT_FOUND (vedi
+ *         errors.h) se nessun sensore di presenza è agganciato a ID.
+ */
+long controllore_getLetturePresenza( const controllore_t *c, const char *ID );
+
+/**
+ * @brief Rilevamenti totali (fronti di salita, cioè nuovi arrivi
+ *        distinti) del sensore di presenza agganciato a un ID.
+ */
+long controllore_getRilevamentiPresenza( const controllore_t *c, const char *ID );
+
+/**
  * @brief Inoltra una lettura al sensore di presenza associato a
  *        bufferIngressoID (creato al primo utilizzo per quell'ID).
  *
