@@ -235,8 +235,11 @@ int parser_costruisciCella( cell_t *cell, const char *path, short int *errCode )
             gestisci_riga_isp( cell, tokens, n, line_no, &creati );
         } else if ( strcmp( tokens[0], "CONNECT" ) == 0 ) {
             gestisci_riga_connect( cell, tokens, n, line_no, &creati );
-        } else if ( strcmp( tokens[0], "MOTORE" ) == 0 || strcmp( tokens[0], "DEVIATORE" ) == 0 ) {
+                } else if ( strcmp( tokens[0], "MOTORE" ) == 0 || strcmp( tokens[0], "DEVIATORE" ) == 0 ) {
             continue; /* gestite da parser_collegaAttuatori, non qui */
+        } else if ( strncmp( raw_line, "SIM_", 4 ) == 0 || strncmp( raw_line, "GEN_", 4 ) == 0
+                    || strncmp( raw_line, "SOGLIA_BUFFER=", 14 ) == 0 ) {
+            continue; /* gestite da parser_caricaSimulazione, non qui */
         } else {
             fprintf( stderr, "[parser riga %d] tipo di record sconosciuto: '%s'\n", line_no, tokens[0] );
         }
@@ -525,4 +528,62 @@ short int parser_applicaScenario( cell_t *cell, const ScenarioConfig *scenario )
 
     return isp_impostaGuasto( isp, scenario->guasto_abilitato,
                                scenario->guasto_tempo_errore, scenario->guasto_tempo_ok );
+}
+
+/* ---------------------------------------------------------------------
+ * parser_caricaSimulazione
+ * --------------------------------------------------------------------- */
+
+int parser_caricaSimulazione( const char *path, SimulationConfig *out, short int *errCode )
+{
+    if ( out == NULL ) {
+        if ( errCode ) *errCode = ERR_NULL_PTR;
+        return 0;
+    }
+
+    /* Default ragionevoli, usati per ogni chiave assente dal file. */
+    memset( out, 0, sizeof( *out ) );
+    out->n_step_simulazione    = 60;
+    out->n_pezzi_prova         = 10;
+    out->soglia_buffer         = 0.8;
+    out->gen_target_dimensionX = 100.0;
+    out->gen_target_raggio     = 10.0;
+    out->gen_errore_pct        = 2;
+
+    FILE *f = fopen( path, "r" );
+    if ( f == NULL ) {
+        fprintf( stderr, "[parser] impossibile aprire il file di configurazione '%s'\n", path );
+        if ( errCode ) *errCode = ERR_NOT_FOUND;
+        return 0;
+    }
+
+    char raw_line[MAX_LINE_LEN];
+    int line_no = 0;
+
+    while ( fgets( raw_line, sizeof( raw_line ), f ) ) {
+        line_no++;
+        trim_line( raw_line );
+        if ( raw_line[0] == '\0' ) continue;
+
+        char key[32], value[32];
+        if ( !split_key_value( raw_line, key, value, sizeof( value ) ) ) continue;
+
+        if ( strcmp( key, "SIM_STEPS" ) == 0 ) {
+            out->n_step_simulazione = atoi( value );
+        } else if ( strcmp( key, "SIM_PEZZI" ) == 0 ) {
+            out->n_pezzi_prova = atoi( value );
+        } else if ( strcmp( key, "SOGLIA_BUFFER" ) == 0 ) {
+            out->soglia_buffer = atof( value );
+        } else if ( strcmp( key, "GEN_TARGET_DIMENSIONX" ) == 0 ) {
+            out->gen_target_dimensionX = atof( value );
+        } else if ( strcmp( key, "GEN_TARGET_RAGGIO" ) == 0 ) {
+            out->gen_target_raggio = atof( value );
+        } else if ( strcmp( key, "GEN_ERRORE_PCT" ) == 0 ) {
+            out->gen_errore_pct = atoi( value );
+        }
+    }
+
+    fclose( f );
+    if ( errCode ) *errCode = OP_SUCCESS;
+    return 1;
 }

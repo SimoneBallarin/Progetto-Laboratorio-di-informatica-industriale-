@@ -135,5 +135,35 @@ int parser_caricaScenario( const char *path, ScenarioConfig *out, short int *err
  *         altrimenti (es. ERR_NOT_FOUND se guasto_isp_id non esiste).
  */
 short int parser_applicaScenario( cell_t *cell, const ScenarioConfig *scenario );
+/**
+ * @brief Valori di simulazione e target di generazione, letti da file
+ *        invece che da #define fissi nel main: dimensioni dei buffer
+ *        (indirettamente, tramite il file di impianto), numero di passi,
+ *        numero di pezzi di prova generati, soglia dei buffer, e le
+ *        misure "nominali" di ingresso attorno a cui viene applicato
+ *        l'errore casuale (quella logica resta nel main, e' gia' scritta:
+ *        qui forniamo solo i valori attorno a cui viene applicata).
+ */
+typedef struct {
+    int    n_step_simulazione;
+    int    n_pezzi_prova;
+    double soglia_buffer;
+    double gen_target_dimensionX;  /* misura nominale di ingresso, es. 100 */
+    double gen_target_raggio;      /* misura nominale di ingresso, es. 10 */
+    int    gen_errore_pct;         /* ampiezza massima dell'errore casuale, in punti percentuali (es. 2 = +/-2%) */
+} SimulationConfig;
+
+/**
+ * @brief Legge il file di configurazione impianto (lo stesso passato a
+ *        parser_costruisciCella) ed estrae i parametri globali di
+ *        simulazione (righe SIM_STEPS=, SIM_PEZZI=, SOGLIA_BUFFER=,
+ *        GEN_TARGET_DIMENSIONX=, GEN_TARGET_RAGGIO=, GEN_ERRORE_PCT=).
+ * @param path Percorso del file di configurazione impianto.
+ * @param out Struct da riempire (viene azzerata e reinizializzata con
+ *        dei default ragionevoli per ogni chiave assente dal file).
+ * @param errCode puntatore opzionale (puo' essere NULL).
+ * @return 1 se il file e' stato letto correttamente, 0 se non si apre.
+ */
+int parser_caricaSimulazione( const char *path, SimulationConfig *out, short int *errCode );
 
 #endif /* PARSER_H */

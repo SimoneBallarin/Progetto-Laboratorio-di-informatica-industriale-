@@ -39,163 +39,14 @@
 #include "errors.h"
 #include "cell.h"
 #include "Controllore.h"
+#include "parser.h"
 
-/* Parametri di configurazione della cella (valori di esempio: da
- * spostare su file di configurazione quando il parser sarà pronto). */
-#define CAPACITA_B1        60
-#define CAPACITA_B2        60
-#define CAPACITA_USCITE    60
-#define TEMPO_ISP1         1     /* ISP1: solo tag materiale, veloce */
-#define TEMPO_M             3
-#define TEMPO_ISP2          2
-#define CAPACITA_N1         2
-#define VELOCITA_N1         2
-#define VELOCITA_MOTORE_N1  5000
-#define ACCEL_MOTORE_N1     2000
-#define VELOCITA_MOTORE_M  5000
-#define ACCEL_MOTORE_M     2000
-#define TEMPO_MIN_COMMUT    3
-#define SOGLIA_BUFFER       0.8
-#define DIMENSIONX_TARGET_ISP2  80
-#define RAGGIO_TARGET_ISP2      6
-/* ISP1 non giudica la qualità: un target qualsiasi (>0) va bene, tanto
- * il suo esito non viene usato per instradare (ha una sola uscita). */
-#define DIMENSIONX_TARGET_ISP1  100
-#define RAGGIO_TARGET_ISP1      10
-
-#define N_STEP_SIMULAZIONE  120
-
-/* Numero di pezzi di prova generati in ingresso a B1. Se supera la
- * capacità di B1 (CAPACITA_B1), i pezzi in eccesso vengono scartati con
- * un messaggio "B1 pieno" (vedi genera_arrivi_esempio) - non è un errore
- * bloccante, ma un modo per osservare quel caso limite se lo si vuole. */
-#define N_PEZZI_PROVA       30
-
-static int costruisci_cella( cell_t *cell )
-{
-    short int err;
-
-    if ( cell_addBuffer( cell, "B1", CAPACITA_B1, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione B1: %d\n", err );
-        return 0;
-    }
-    if ( cell_addISP( cell, "ISP1", TEMPO_ISP1, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione ISP1: %d\n", err );
-        return 0;
-    }
-    if ( cell_addNastro( cell, "N1", CAPACITA_N1, VELOCITA_N1, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione N1: %d\n", err );
-        return 0;
-    }
-    if ( cell_addMachine( cell, "M", TEMPO_M, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione M: %d\n", err );
-        return 0;
-    }
-    if ( cell_addBuffer( cell, "B2", CAPACITA_B2, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione B2: %d\n", err );
-        return 0;
-    }
-    if ( cell_addISP( cell, "ISP2", TEMPO_ISP2, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione ISP2: %d\n", err );
-        return 0;
-    }
-    if ( cell_addBuffer( cell, "B_Alacciaio", CAPACITA_USCITE, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione B_Alacciaio: %d\n", err );
-        return 0;
-    }
-    if ( cell_addBuffer( cell, "B_riqualifica", CAPACITA_USCITE, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione B_riqualifica: %d\n", err );
-        return 0;
-    }
-    if ( cell_addBuffer( cell, "B_TRASH", CAPACITA_USCITE, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione B_TRASH: %d\n", err );
-        return 0;
-    }
-    if ( cell_addBuffer( cell, "B_rame", CAPACITA_USCITE, &err ) == NULL ) {
-        fprintf( stderr, "Errore creazione B_rame: %d\n", err );
-        return 0;
-    }
-
-    /* Collegamenti: l'ordine con cui si collegano le 4 uscite di ISP2 è
-     * significativo (vedi convenzione sopra e in Controllore.c). */
-    if ( cell_connect( cell, "B1", "ISP1" ) != OP_SUCCESS ) { return 0; }
-    if ( cell_connect( cell, "ISP1", "N1" ) != OP_SUCCESS ) { return 0; }
-    if ( cell_connect( cell, "N1", "M" ) != OP_SUCCESS ) { return 0; }
-    if ( cell_connect( cell, "M", "B2" ) != OP_SUCCESS ) { return 0; }
-    if ( cell_connect( cell, "B2", "ISP2" ) != OP_SUCCESS ) { return 0; }
-    if ( cell_connect( cell, "ISP2", "B_Alacciaio" ) != OP_SUCCESS ) { return 0; }    /* indice 0 */
-    if ( cell_connect( cell, "ISP2", "B_riqualifica" ) != OP_SUCCESS ) { return 0; }  /* indice 1 */
-    if ( cell_connect( cell, "ISP2", "B_TRASH" ) != OP_SUCCESS ) { return 0; }        /* indice 2 */
-    if ( cell_connect( cell, "ISP2", "B_rame" ) != OP_SUCCESS ) { return 0; }         /* indice 3 */
-
-    return OP_SUCCESS;
-}
-
-static int collega_attuatori( controllore_t *ctrl )
-{
-    short int err;
-    const char *buffer_ids[] = { "B1", "B2", "B_Alacciaio", "B_riqualifica", "B_TRASH", "B_rame" };
-    int nb = (int) ( sizeof( buffer_ids ) / sizeof( buffer_ids[0] ) );
-    int bi;
-
-    err = controllore_collegaMotore( ctrl, "N1", VELOCITA_MOTORE_N1, ACCEL_MOTORE_N1 );
-    if ( err != OP_SUCCESS ) {
-        fprintf( stderr, "Errore collegamento Motore su N1: %d\n", err );
-        return 0;
-    }
-    
-    err = controllore_collegaMotore( ctrl, "M", VELOCITA_MOTORE_M, ACCEL_MOTORE_M );
-    if ( err != OP_SUCCESS ) {
-        fprintf( stderr, "Errore collegamento Motore su M: %d\n", err );
-        return 0;
-    }
-
-    err = controllore_collegaDeviatore( ctrl, "ISP2", TEMPO_MIN_COMMUT );
-    if ( err != OP_SUCCESS ) {
-        fprintf( stderr, "Errore collegamento Deviatore su ISP2: %d\n", err );
-        return 0;
-    }
-
-    /* Sensore di qualità agganciato SOLO a ISP2: ISP1 resta una ISP
-     * "passacarte" (puro timer, nessun giudizio di qualità), senza più
-     * bisogno di nessun target fittizio - semplicemente non ha nessun
-     * sensore agganciato. */
-    err = controllore_collegaSensoreQualita( ctrl, "ISP2", DIMENSIONX_TARGET_ISP2, RAGGIO_TARGET_ISP2 );
-    if ( err != OP_SUCCESS ) {
-        fprintf( stderr, "Errore collegamento SensoreQualita su ISP2: %d\n", err );
-        return 0;
-    }
-    
-    err = controllore_collegaSensoreQualita( ctrl, "ISP1", DIMENSIONX_TARGET_ISP2, RAGGIO_TARGET_ISP2 );
-    if ( err != OP_SUCCESS ) {
-        fprintf( stderr, "Errore collegamento SensoreQualita su ISP1: %d\n", err );
-        return 0;
-    }
-
-
-    /* Sensore buffer su tutti e 6 i buffer: prima della versione con
-     * aggancio esplicito, il controllore ne creava uno in automatico
-     * per ogni buffer già presente al momento di controllore_create -
-     * ora va fatto qui, esplicitamente, uno per uno. */
-    for ( bi = 0; bi < nb; bi++ ) {
-        err = controllore_collegaSensoreBuffer( ctrl, buffer_ids[bi] );
-        if ( err != OP_SUCCESS ) {
-            fprintf( stderr, "Errore collegamento SensoreBuffer su %s: %d\n", buffer_ids[bi], err );
-            return 0;
-        }
-    }
-
-    /* Sensore di presenza su B1 (unico punto di ingresso dall'esterno,
-     * sez. 5.1 del progetto): va agganciato PRIMA di poter chiamare
-     * controllore_segnalaArrivo per lo stesso ID. */
-    err = controllore_collegaSensorePresenza( ctrl, "B1" );
-    if ( err != OP_SUCCESS ) {
-        fprintf( stderr, "Errore collegamento SensorePresenza su B1: %d\n", err );
-        return 0;
-    }
-
-    return OP_SUCCESS;
-}
+/* Percorso del file di configurazione impianto: contiene sia il layout
+ * della cella (BUFFER/NASTRO/MACCHINA/ISP/CONNECT/MOTORE/DEVIATORE) sia i
+ * parametri di simulazione (SIM_STEPS/SIM_PEZZI/SOGLIA_BUFFER/
+ * GEN_TARGET_DIMENSIONX/GEN_TARGET_RAGGIO/GEN_ERRORE_PCT). Prima erano
+ * tutti #define fissi qui nel main: ora arrivano da qui. */
+#define CONFIG_PATH  "plant_config_valid.txt"
 
 /* Genera qualche oggetto di esempio in ingresso a B1, alternando
  * materiale e "conformità" (vicinanza al target di ISP2), giusto per
@@ -243,46 +94,59 @@ int main( void )
     short int err;
     int step;
 
+       SimulationConfig sim;
+    int elementi_cella, attuatori_collegati;
+
+    /* 0. Parametri di simulazione dal file di configurazione (prima
+     * erano #define fissi qui nel main). */
+    parser_caricaSimulazione( CONFIG_PATH, &sim, &err );
+
     cell = cell_create();
     if ( cell == NULL ) {
         fprintf( stderr, "Errore creazione cella\n" );
-        return OP_SUCCESS;
+        return 1;
     }
 
-    if ( !costruisci_cella( cell ) ) {
+    /* 1. Layout della cella dal file di configurazione. */
+    elementi_cella = parser_costruisciCella( cell, CONFIG_PATH, &err );
+    printf( "Configurazione impianto '%s': %d elementi creati\n", CONFIG_PATH, elementi_cella );
+    if ( elementi_cella == 0 ) {
         cell_destroy( cell );
-        return OP_SUCCESS;
+        return 1;
     }
 
-    /* Il controllore va creato DOPO aver aggiunto tutti i buffer: crea
-     * automaticamente un SensoreBuffer per ognuno di quelli già presenti
-     * in questo momento (vedi Controllore.h). */
-    ctrl = controllore_create( cell, SOGLIA_BUFFER, &err );
+    ctrl = controllore_create( cell, sim.soglia_buffer, &err );
     if ( ctrl == NULL ) {
         fprintf( stderr, "Errore creazione controllore: %d\n", err );
         cell_destroy( cell );
-        return OP_SUCCESS;
+        return 1;
     }
 
-    if ( !collega_attuatori( ctrl ) ) {
+    /* 2. Motore/Deviatore dal file di configurazione. */
+    attuatori_collegati = parser_collegaAttuatori( ctrl, CONFIG_PATH, &err );
+    printf( "Attuatori collegati: %d\n", attuatori_collegati );
+    if ( attuatori_collegati == 0 ) {
         controllore_destroy( ctrl );
         cell_destroy( cell );
-        return OP_SUCCESS;
+        return 1;
     }
 
     {
         char id[16];
         int idx;
-        for ( idx = 0; idx < N_PEZZI_PROVA; idx++ ) {
+        for ( idx = 0; idx < sim.n_pezzi_prova; idx++ ) {
             char tipo;
             if (rand() % 2 == 0) {
                 tipo = 'A';
              } else {
                 tipo = 'B';
               }
-            double  scarto_pct = ((rand() % 5) - 2);
-            double dimensionX = DIMENSIONX_TARGET_ISP1 + ((DIMENSIONX_TARGET_ISP1*scarto_pct )/100);
-            double raggio     = RAGGIO_TARGET_ISP1 + ((RAGGIO_TARGET_ISP1 * scarto_pct )/100);
+            /* Errore casuale in un intervallo di +/- sim.gen_errore_pct
+             * punti percentuali (stessa logica di Simone, ma con
+             * l'ampiezza letta da file invece che fissa a 2). */
+            double scarto_pct = (double) ( rand() % ( 2 * sim.gen_errore_pct + 1 ) - sim.gen_errore_pct );
+            double dimensionX = sim.gen_target_dimensionX + ( sim.gen_target_dimensionX * scarto_pct / 100.0 );
+            double raggio     = sim.gen_target_raggio     + ( sim.gen_target_raggio     * scarto_pct / 100.0 );
 
             snprintf( id, sizeof( id ), "P%d", idx + 1 );
             genera_arrivi_esempio( cell, ctrl, idx, id, tipo, dimensionX, raggio );
@@ -290,6 +154,14 @@ int main( void )
     }
 
     printf( "=== Stato iniziale (dopo la creazione degli oggetti, prima di far girare la simulazione) ===\n" );
+    controllore_print( ctrl );
+    printf( "\n" );
+
+    for ( step = 0; step < sim.n_step_simulazione; step++ ) {
+        controllore_step( ctrl, step );
+    }
+
+    printf( "=== Stato finale (dopo %d passi) ===\n", sim.n_step_simulazione );
     controllore_print( ctrl );
     printf( "\n" );
 
