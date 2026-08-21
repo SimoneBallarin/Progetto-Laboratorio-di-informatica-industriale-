@@ -247,7 +247,7 @@ static double fattore_rumore( double tolleranza )
     double r = rand()%10; //scelta casuale per la tolleranza da applicare
 
     if ( tolleranza <= 0.0 ) {
-        return 1.0;
+        return 0.0;
     }
 
     if(r==5){return tolleranza*2;}

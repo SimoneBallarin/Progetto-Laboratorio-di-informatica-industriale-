@@ -77,6 +77,11 @@ void get_type_letture_totali(const SensoreQualita *s, long type_letture_totali[3
 long get_letture_totali_qualita(const SensoreQualita *s);
 long get_anomalie_rilevate(const SensoreQualita *s);
 
+/* Conteggio di quante volte get_Material ha riconosciuto il pezzo come
+ * materiale 'A' (rispettivamente 'B') entro tolleranza. */
+long get_ConteggioMaterialeA(const SensoreQualita *s);
+long get_ConteggioMaterialeB(const SensoreQualita *s);
+
 /* Determina l'indice di materiale (0,1,2) usato per selezionare la
  * soglia target[] corretta. */
 char  get_Material(object_t *object , SensoreQualita *s);
