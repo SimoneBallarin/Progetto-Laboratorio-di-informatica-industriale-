@@ -124,6 +124,8 @@ int main( void )
 
     /* 2. Motore/Deviatore dal file di configurazione. */
     attuatori_collegati = parser_collegaAttuatori( ctrl, CONFIG_PATH, &err );
+    int sensori_qualita = parser_collegaSensoriQualita( ctrl, CONFIG_PATH, &err );
+    printf( "Sensori di qualita' collegati: %d\n", sensori_qualita );
     printf( "Attuatori collegati: %d\n", attuatori_collegati );
     if ( attuatori_collegati == 0 ) {
         controllore_destroy( ctrl );
@@ -165,11 +167,11 @@ int main( void )
     controllore_print( ctrl );
     printf( "\n" );
 
-    for ( step = 0; step < N_STEP_SIMULAZIONE; step++ ) {
+    for ( step = 0; step < sim.n_step_simulazione; step++ ) {
         controllore_step( ctrl, step );
     }
 
-    printf( "=== Stato finale (dopo %d passi) ===\n", N_STEP_SIMULAZIONE );
+    printf( "=== Stato finale (dopo %d passi) ===\n", sim.n_step_simulazione );
     controllore_print( ctrl );
     printf( "Completati: %ld, ancora in coda (pending): %d\n",
             controllore_getCompletati( ctrl ), controllore_getPendingCount( ctrl ) );
