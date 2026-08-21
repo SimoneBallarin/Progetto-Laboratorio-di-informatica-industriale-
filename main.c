@@ -46,7 +46,7 @@
  * parametri di simulazione (SIM_STEPS/SIM_PEZZI/SOGLIA_BUFFER/
  * GEN_TARGET_DIMENSIONX/GEN_TARGET_RAGGIO/GEN_ERRORE_PCT). Prima erano
  * tutti #define fissi qui nel main: ora arrivano da qui. */
-#define CONFIG_PATH  "plant_config_valid.txt"
+#define CONFIG_PATH  "lib/parser/plant_config_valid.txt"
 
 /* Genera qualche oggetto di esempio in ingresso a B1, alternando
  * materiale e "conformità" (vicinanza al target di ISP2), giusto per
@@ -94,7 +94,7 @@ int main( void )
     short int err;
     int step;
 
-       SimulationConfig sim;
+    SimulationConfig sim;
     int elementi_cella, attuatori_collegati;
 
     /* 0. Parametri di simulazione dal file di configurazione (prima
@@ -160,14 +160,6 @@ int main( void )
     }
 
     printf( "=== Stato iniziale (dopo la creazione degli oggetti, prima di far girare la simulazione) ===\n" );
-    controllore_print( ctrl );
-    printf( "\n" );
-
-    for ( step = 0; step < sim.n_step_simulazione; step++ ) {
-        controllore_step( ctrl, step );
-    }
-
-    printf( "=== Stato finale (dopo %d passi) ===\n", sim.n_step_simulazione );
     controllore_print( ctrl );
     printf( "\n" );
 
