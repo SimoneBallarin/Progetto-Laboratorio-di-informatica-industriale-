@@ -162,4 +162,16 @@ long get_anomalie_rilevate(const SensoreQualita *s)
     return s->anomalie_rilevate;
 }
 
+long get_ConteggioMaterialeA(const SensoreQualita *s)
+{
+    if (s == NULL) return ERR_NULL_PTR;
+    return s->A;
+}
+
+long get_ConteggioMaterialeB(const SensoreQualita *s)
+{
+    if (s == NULL) return ERR_NULL_PTR;
+    return s->B;
+}
+
 
