@@ -481,21 +481,34 @@ static void processISP( controllore_t *c, const char *ID, int step )
      * "nessuna uscita a quell'indice"). */
     if ( outCount == 1 ) {
         outIndex = 0;
-    } else if ( esito == CONFORME && outCount >= 4 && qAssoc != NULL ) {
-        /* Con 4 uscite, l'esito CONFORME da solo non basta a scegliere
-         * tra le due uscite "pezzo conforme" (una per materiale): si usa
-         * get_Material (calcolo su densita'/geometria, non il campo
-         * object->type impostato a mano alla creazione) per decidere.
-         * Richiede il sensore agganciato (qAssoc), da cui prende il
-         * target di riferimento usato da get_Material stessa. */
+    }
+
+    /* get_Material (calcolo su densita'/geometria, non il campo
+     * object->type impostato a mano alla creazione) va chiamata ogni
+     * volta che questa ISP ha un sensore di qualita' agganciato, non
+     * solo quando serve per instradare (outCount>=4): e' l'unico modo
+     * per popolare i contatori A/B del sensore (letti da
+     * controllore_getMaterialeA/B, usati dalle statistiche - vedi
+     * statistiche_stampa) anche per un'ISP "passacarte" a singola
+     * uscita come ISP1, che classifica comunque il materiale ma non ha
+     * bisogno di scegliere tra due uscite diverse per instradarlo. */
+    if ( qAssoc != NULL ) {
         char materiale = get_Material( obj, &qAssoc->sensore );
-        if ( materiale != 'A' && materiale != 'B' ) {
-            /* get_Material non ha riconosciuto il materiale entro
-             * tolleranza per nessuna delle due densita': usiamo
-             * object->type come ripiego, per non perdere l'oggetto. */
-            materiale = object_getType( obj );
+
+        if ( esito == CONFORME && outCount >= 4 ) {
+            /* Con 4 uscite, l'esito CONFORME da solo non basta a
+             * scegliere tra le due uscite "pezzo conforme" (una per
+             * materiale): si usa il materiale appena calcolato per
+             * decidere l'indice 0 (materiale 'A') o l'ultimo indice, 3
+             * (materiale 'B'). */
+            if ( materiale != 'A' && materiale != 'B' ) {
+                /* get_Material non ha riconosciuto il materiale entro
+                 * tolleranza per nessuna delle due densita': usiamo
+                 * object->type come ripiego, per non perdere l'oggetto. */
+                materiale = object_getType( obj );
+            }
+            outIndex = ( materiale == 'B' ) ? 3 : 0;
         }
-        outIndex = ( materiale == 'B' ) ? 3 : 0;
     }
 
     routeObject( c, ENTITY_ISP, ID, obj, outIndex, step, dev );
@@ -1070,6 +1083,105 @@ long controllore_getTempoMotoreOff( const controllore_t *c, const char *targetID
         return ERR_NOT_FOUND;
     }
     return mot->tempoOffTotale;
+}
+
+long controllore_getLettureQualita( const controllore_t *c, const char *ispID )
+{
+    qualitaSensorAssoc_t *qAssoc;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    qAssoc = findQualitaSensorAssoc( (controllore_t *) c, ispID );
+    if ( qAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return get_letture_totali_qualita( &qAssoc->sensore );
+}
+
+long controllore_getAnomalieQualita( const controllore_t *c, const char *ispID )
+{
+    qualitaSensorAssoc_t *qAssoc;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    qAssoc = findQualitaSensorAssoc( (controllore_t *) c, ispID );
+    if ( qAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return get_anomalie_rilevate( &qAssoc->sensore );
+}
+
+short int controllore_getTipoLettureQualita( const controllore_t *c, const char *ispID, long out[3] )
+{
+    qualitaSensorAssoc_t *qAssoc;
+
+    if ( c == NULL || ispID == NULL || out == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    qAssoc = findQualitaSensorAssoc( (controllore_t *) c, ispID );
+    if ( qAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    get_type_letture_totali( &qAssoc->sensore, out );
+    return OP_SUCCESS;
+}
+
+long controllore_getMaterialeA( const controllore_t *c, const char *ispID )
+{
+    qualitaSensorAssoc_t *qAssoc;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    qAssoc = findQualitaSensorAssoc( (controllore_t *) c, ispID );
+    if ( qAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return get_ConteggioMaterialeA( &qAssoc->sensore );
+}
+
+long controllore_getMaterialeB( const controllore_t *c, const char *ispID )
+{
+    qualitaSensorAssoc_t *qAssoc;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    qAssoc = findQualitaSensorAssoc( (controllore_t *) c, ispID );
+    if ( qAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return get_ConteggioMaterialeB( &qAssoc->sensore );
+}
+
+long controllore_getLetturePresenza( const controllore_t *c, const char *ID )
+{
+    presenceSensorAssoc_t *pAssoc;
+
+    if ( c == NULL || ID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    pAssoc = findPresenceSensorAssoc( (controllore_t *) c, ID );
+    if ( pAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return get_letture_totali_presenza( &pAssoc->sensore );
+}
+
+long controllore_getRilevamentiPresenza( const controllore_t *c, const char *ID )
+{
+    presenceSensorAssoc_t *pAssoc;
+
+    if ( c == NULL || ID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    pAssoc = findPresenceSensorAssoc( (controllore_t *) c, ID );
+    if ( pAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return get_rilevamenti_totali_presenza( &pAssoc->sensore );
 }
 
 int controllore_segnalaArrivo( controllore_t *c, const char *bufferIngressoID, int time_on, int presenza )

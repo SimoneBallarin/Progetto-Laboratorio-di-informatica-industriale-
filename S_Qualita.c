@@ -87,9 +87,9 @@ char get_Material(object_t *object, SensoreQualita *s)
     float ConfrontoB = (float)(((object -> dimensionX)*(object -> raggio)*(object -> raggio))*3.14 * densita[1]);
     float materiale;
     float e;
-    int p=5;
-    if (object -> type == 'A') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[0]); e = 100*p/materiale;}
-    if (object -> type == 'B') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[1]); e = 100*p/materiale;}
+    int p=12;
+    if (object -> type == 'A') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[0]); e = materiale*p/100;}
+    if (object -> type == 'B') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[1]); e = materiale*p/100;}
     if((materiale - e)<= ConfrontoA && ConfrontoA <= (materiale + e)){ s->A++; return 'A';}
     else if((materiale - e)<= ConfrontoB && ConfrontoB <= (materiale + e)){ s->B++; return 'B';}
     else {return 0;}
