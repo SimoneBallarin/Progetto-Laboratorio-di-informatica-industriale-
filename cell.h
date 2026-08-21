@@ -76,12 +76,10 @@ machine_t *cell_addMachine( cell_t *cell, const char *ID, int tempo_lavorazione,
  * @param cell Puntatore alla cella.
  * @param ID Identificativo (es. "ISP1"), non vuoto e < IDLENGTH.
  * @param tempo_controllo Passi di simulazione per controllare un pezzo (deve essere > 0).
- * @param dimensionX_target Valore di riferimento per la dimensione, vedi S_Qualita.h.
- * @param raggio_target Valore di riferimento per il raggio, vedi S_Qualita.h.
  * @param errCode puntatore opzionale (può essere NULL), vedi cell_addBuffer.
  * @return Puntatore alla ISP creata, o NULL in caso di errore.
  */
-isp_t *cell_addISP( cell_t *cell, const char *ID, int tempo_controllo, int dimensionX_target, int raggio_target, short int *errCode );
+isp_t *cell_addISP( cell_t *cell, const char *ID, int tempo_controllo, short int *errCode );
 
 /**
  * @brief Crea un nastro trasportatore, lo registra nel registro globale
