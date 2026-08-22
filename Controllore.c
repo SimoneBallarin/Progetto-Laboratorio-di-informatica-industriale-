@@ -224,7 +224,7 @@ static short int genericInsert( controllore_t *c, entity_type_t type, const char
             }
             /* Un buffer e' una coda di attesa, non una stazione di
              * lavorazione: l'ingresso in un buffer NON conta come
-             * "inizio processo" (vedi object_setStepInizioProcesso), a
+             * "inizio processo" (vedi object_setStepPartial), a
              * differenza dei case sotto. Ritorna subito, senza passare
              * dall'aggiornamento comune a fine funzione. */
             return result;
@@ -256,12 +256,12 @@ static short int genericInsert( controllore_t *c, entity_type_t type, const char
 
     /* Prima ammissione riuscita in una stazione vera (macchina/ISP/
      * nastro, non un buffer): segna l'inizio del processo, UNA SOLA
-     * VOLTA per oggetto (object_setStepInizioProcesso rifiuta con
+     * VOLTA per oggetto (object_setStepPartial rifiuta con
      * ERR_DUPLICATE le chiamate successive, es. quando lo stesso
      * oggetto entra in una stazione successiva della pipeline - qui
      * ignoriamo volutamente l'esito, non e' un errore da propagare). */
     if ( result == OP_SUCCESS ) {
-        object_setStepInizioProcesso( obj, step );
+        object_setStepPartial( obj, step );
     }
 
     return result;
@@ -332,15 +332,15 @@ static void segnaCompletatoSeTerminale( controllore_t *c, entity_type_t destType
                                          const char *destID, object_t *obj, int step )
 {
     if ( genericOutputCount( c, destType, destID ) == 0 ) {
-        int stepInizioProcesso;
+        int stepPartial;
 
         object_setStepOut( obj, step );
         c->completati++;
 
-        stepInizioProcesso = object_getStepInizioProcesso( obj );
-        if ( stepInizioProcesso != STEP_OUT_NONE ) {
-            int attesa = stepInizioProcesso - object_getStepCreation( obj );
-            int attraversamento = step - stepInizioProcesso;
+        stepPartial = object_getStepPartial( obj );
+        if ( stepPartial != STEP_OUT_NONE ) {
+            int attesa = stepPartial - object_getStepCreation( obj );
+            int attraversamento = step - stepPartial;
             log_evento( c->log, step, LOG_INFO,
                         "Completamento %s in %s: attesa=%d, attraversamento=%d (totale=%d passi)",
                         object_getID( obj ), destID, attesa, attraversamento, attesa + attraversamento );
