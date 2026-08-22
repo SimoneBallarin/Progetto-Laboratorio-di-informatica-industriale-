@@ -307,7 +307,85 @@ static short int genericOutputAt( controllore_t *c, entity_type_t type, const ch
     }
 }
 
-/* ------------------------------------------------------------------ */
+/**
+ * @brief Controllo di sola lettura (nessuna mutazione, a differenza di
+ *        genericInsert): l'entita' indicata ha posto per accogliere un
+ *        oggetto ADESSO?
+ *
+ * Usata per implementare la CONTROPRESSIONE VISIBILE (vedi
+ * process*Backpressure sotto): una stazione a singola uscita non deve
+ * rilasciare il proprio oggetto (isp_tryRelease/machine_tryRelease/
+ * nastro_removeReadyObject) se la destinazione e' gia' piena/occupata -
+ * altrimenti l'oggetto rilasciato finirebbe subito nella coda pending
+ * (invisibile), e la stazione si libererebbe comunque, dando
+ * l'impressione che tutto scorra anche quando in realta' e' bloccato a
+ * valle. Bloccando qui, PRIMA del rilascio, la stazione resta occupata
+ * e visibilmente "in attesa" - la congestione si vede risalire lungo la
+ * linea invece di sparire dentro pending.
+ */
+static bool genericIsAvailable( controllore_t *c, entity_type_t type, const char *ID )
+{
+    switch ( type ) {
+        case ENTITY_BUFFER: {
+            buffer_t *b = cell_getBuffer( c->cell, ID );
+            return ( b != NULL ) && !buffer_isFull( b );
+        }
+        case ENTITY_MACHINE: {
+            machine_t *m = cell_getMachine( c->cell, ID );
+            return ( m != NULL ) && !machine_isBusy( m );
+        }
+        case ENTITY_ISP: {
+            isp_t *i = cell_getISP( c->cell, ID );
+            return ( i != NULL ) && !isp_isBusy( i );
+        }
+        case ENTITY_NASTRO: {
+            nastro_t *n = cell_getNastro( c->cell, ID );
+            return ( n != NULL ) && !nastro_isFull( n );
+        }
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Per una stazione a UNA SOLA uscita e senza Deviatore (l'unico
+ *        caso in cui la destinazione e' nota in anticipo, senza dover
+ *        prima leggere/rilasciare l'oggetto): dice se conviene procedere
+ *        col rilascio, controllando la disponibilita' dell'unica
+ *        destinazione possibile PRIMA di chiamare tryRelease.
+ *
+ * Per stazioni con piu' uscite (es. ISP2: la destinazione dipende
+ * dall'esito qualita', noto solo al momento del rilascio) o con un
+ * Deviatore agganciato (che ha una propria logica di attesa posizione,
+ * gia' gestita da routeObject/pendingAdd), questa funzione non si
+ * applica: ritorna sempre true, lasciando invariato il comportamento
+ * esistente (rilascia sempre, eventualmente pendingAdd se la
+ * destinazione risulta piena SOLO dopo il rilascio).
+ * @return true se si puo' procedere a chiamare tryRelease, false se la
+ *         stazione deve restare occupata questo passo (contropressione).
+ */
+static bool puoRilasciare( controllore_t *c, entity_type_t type, const char *ID )
+{
+    char destID[IDLENGTH];
+    entity_type_t destType;
+
+    if ( genericOutputCount( c, type, ID ) != 1 ) {
+        return true; /* piu' uscite: destinazione nota solo al rilascio, invariato */
+    }
+    if ( type == ENTITY_ISP && findDeviatoreAssoc( c, ID ) != NULL ) {
+        return true; /* Deviatore agganciato: ha gia' la sua logica di attesa, invariato */
+    }
+    if ( genericOutputAt( c, type, ID, 0, destID ) != OP_SUCCESS ) {
+        return true; /* nessuna uscita configurata: routeObject la gestisce come "completato" */
+    }
+    if ( registry_getType( destID, &destType ) != OP_SUCCESS ) {
+        return true;
+    }
+
+    return genericIsAvailable( c, destType, destID );
+}
+
+
 /*  CODA "PENDING"                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -490,6 +568,13 @@ static void processISP( controllore_t *c, const char *ID, int step )
     if ( i == NULL || !isp_isReady( i, step ) ) {
         return;
     }
+    if ( !puoRilasciare( c, ENTITY_ISP, ID ) ) {
+        /* Contropressione visibile: la destinazione (unica uscita, senza
+         * Deviatore) e' piena/occupata ADESSO. Non rilasciamo: la ISP
+         * resta occupata questo passo, invece di liberarsi e infilare
+         * l'oggetto nella coda pending invisibile. */
+        return;
+    }
 
     /* isp_tryRelease non calcola piu' nessun esito: la ISP di per se'
      * e' un puro timer. L'esito (se serve) si calcola qui, usando il
@@ -601,6 +686,10 @@ static void processMachine( controllore_t *c, const char *ID, int step )
     if ( !machine_isReady( m, step ) ) {
         return;
     }
+    if ( !puoRilasciare( c, ENTITY_MACHINE, ID ) ) {
+        /* Contropressione visibile: vedi commento in processISP. */
+        return;
+    }
 
     obj = machine_tryRelease( m, step );
     if ( obj == NULL ) {
@@ -640,6 +729,10 @@ static void processNastro( controllore_t *c, const char *ID, int step )
     if ( !nastro_isReady( n, step ) ) {
         return;
     }
+    if ( !puoRilasciare( c, ENTITY_NASTRO, ID ) ) {
+        /* Contropressione visibile: vedi commento in processISP. */
+        return;
+    }
 
     obj = nastro_removeReadyObject( n, step );
     if ( obj == NULL ) {
@@ -672,19 +765,27 @@ static void processBuffer( controllore_t *c, const char *ID, int step )
         return;
     }
 
+    /* Contropressione visibile (generalizza il controllo che prima
+     * c'era SOLO per destType==ENTITY_MACHINE, vedi sotto): se la
+     * destinazione (qualunque tipo: macchina, ISP, nastro, buffer) e'
+     * gia' occupata/piena ADESSO, non preleviamo nulla da questo passo -
+     * l'oggetto resta visibilmente in b, invece di essere tolto e
+     * infilato nella coda pending invisibile in attesa che la
+     * destinazione si liberi. Prima questo controllo esisteva solo per
+     * ENTITY_MACHINE (vedi sotto la soglia buffer-aware): mancava per
+     * ENTITY_ISP, che e' esattamente il caso B1->ISP1. */
+    if ( !genericIsAvailable( c, destType, destID ) ) {
+        return;
+    }
+
     if ( destType == ENTITY_MACHINE ) {
         machine_t *m = cell_getMachine( c->cell, destID );
         char mOutID[IDLENGTH];
         entity_type_t mOutType;
 
-        if ( m == NULL || machine_isBusy( m ) ) {
-            return; /* macchina occupata: niente da fare questo passo */
-        }
-
-        /* Ammissione "buffer-aware" (Strategia 1, sez. 4.1): se il buffer
-         * a valle della macchina e' oltre soglia, ritarda l'ammissione.
-         * La lettura viene dal SensoreBuffer associato, non da
-         * buffer_getCount/getCapacity direttamente. */
+        /* genericIsAvailable sopra ha gia' verificato che m non sia
+         * occupata: qui resta solo il controllo aggiuntivo "buffer-aware"
+         * (Strategia 1, sez. 4.1) sul buffer a valle della macchina. */
         if ( machine_getOutputCount( m ) > 0 &&
              machine_getOutputAt( m, 0, mOutID ) == OP_SUCCESS &&
              registry_getType( mOutID, &mOutType ) == OP_SUCCESS &&
