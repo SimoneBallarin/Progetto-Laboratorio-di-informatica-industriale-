@@ -119,8 +119,18 @@ int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
 if(s->status == QUALITA_OK){
     if (s->dimensionX_target == 0 || s->raggio_target == 0 ) {return ERR_NOT_SUPPORTED;} /* target non configurato per questo materiale */
 
-    percentualeX = (int)fabs(object->dimensionX - s->dimensionX_target) * 100 /s->dimensionX_target;
-    percentualeR = (int)fabs(object->raggio - s->raggio_target) * 100 /s->raggio_target;
+    /* Bug corretto: il cast (int) si applicava SOLO a fabs(...), non
+     * all'intera espressione - per precedenza degli operatori era
+     * equivalente a ((int)fabs(diff)) * 100 / target, che tronca la
+     * differenza a intero PRIMA di scalarla in percentuale. Con target
+     * piccoli (es. raggio_target=6 su ISP2) uno scostamento reale di
+     * 0.9 diventava (int)0.9=0, quindi percentuale=0 invece del ~15%
+     * reale, falsando la classificazione CONFORME/RIVALUTAZIONE/SCARTO.
+     * Ora il troncamento a intero avviene UNA SOLA VOLTA, alla fine, sul
+     * risultato gia' scalato in percentuale (100.0 forza la divisione
+     * in virgola mobile). */
+    percentualeX = (int)( fabs(object->dimensionX - s->dimensionX_target) * 100.0 / s->dimensionX_target );
+    percentualeR = (int)( fabs(object->raggio - s->raggio_target) * 100.0 / s->raggio_target );
     if (percentualeX <= 5 && percentualeR <= 5  ) {
         s->risultato_ultima_lettura = CONFORME;
     } 

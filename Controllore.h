@@ -59,6 +59,7 @@
 #include "cell.h"
 #include "S_Buffer.h"
 #include "S_Presenza.h"
+#include "log.h"
 
 typedef struct controllore controllore_t;
 
@@ -88,6 +89,26 @@ controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int
  * @param c Puntatore al controllore.
  */
 void controllore_destroy( controllore_t *c );
+
+/**
+ * @brief Collega (facoltativamente) un log eventi al controllore.
+ *
+ * Da qui in poi controllore_step registra nel log, NEL MOMENTO ESATTO
+ * in cui accadono, gli eventi rilevanti che il controllore osserva
+ * direttamente durante l'orchestrazione (oggi: il completamento di un
+ * oggetto in un buffer terminale, vedi segnaCompletatoSeTerminale) -
+ * a differenza di un log "a posteriori" costruito scandendo lo stato
+ * finale della cella, questo mantiene l'ordine cronologico reale degli
+ * eventi nel file di log.
+ *
+ * Facoltativo: se non chiamata (o chiamata con log == NULL), il
+ * controllore funziona esattamente come prima, senza loggare nulla
+ * (log_evento con puntatore NULL non fa nulla, vedi log.h).
+ * @param c Puntatore al controllore.
+ * @param log Puntatore al log (vedi log.h), o NULL per scollegarlo.
+ * @return OP_SUCCESS, o ERR_NULL_PTR se c è NULL.
+ */
+short int controllore_collegaLog( controllore_t *c, log_t *log );
 
 /**
  * @brief Collega un Motore a un nastro O a una macchina già presente
@@ -318,6 +339,29 @@ long controllore_getRilevamentiPresenza( const controllore_t *c, const char *ID 
  *         (vedi S_Presenza.h), oppure un codice ERR_* in caso di errore.
  */
 int controllore_segnalaArrivo( controllore_t *c, const char *bufferIngressoID, int time_on, int presenza );
+
+/**
+ * @brief Inserisce un oggetto arrivato dall'ESTERNO della cella in un
+ *        buffer di ingresso, aggiornando correttamente anche l'eventuale
+ *        SensoreBuffer agganciato (stesso percorso di sincronizzazione
+ *        usato internamente da controllore_step per ogni movimento tra
+ *        entità della cella).
+ *
+ * Va usata al posto di chiamare buffer_insertObject direttamente su un
+ * buffer di ingresso: un inserimento diretto bypassa il SensoreBuffer,
+ * che resterebbe permanentemente disallineato dal reale livello del
+ * buffer (letture di occupazione sempre a 0%, indipendentemente da
+ * quanti oggetti siano davvero in coda - vedi
+ * controllore_getPercentualeBuffer/statistiche_campiona).
+ * @param c Puntatore al controllore.
+ * @param bufferID ID del buffer di ingresso (deve già esistere nella cella).
+ * @param obj Puntatore all'oggetto da inserire.
+ * @param step Step di simulazione corrente.
+ * @return OP_SUCCESS se inserito, ERR_FULL se il buffer è pieno,
+ *         ERR_NOT_FOUND se bufferID non esiste, un altro codice ERR_*
+ *         (vedi errors.h) altrimenti.
+ */
+short int controllore_ammettiArrivo( controllore_t *c, const char *bufferID, object_t *obj, int step );
 
 /**
  * @brief Numero di oggetti usciti dalla linea (arrivati a un'entità
