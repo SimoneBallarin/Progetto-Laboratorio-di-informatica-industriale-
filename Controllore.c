@@ -101,6 +101,7 @@ struct controllore {
     presenceSensorAssoc_t *sensoriPresenza;
     qualitaSensorAssoc_t *sensoriQualita;
     long completati;
+    log_t *log;                         /**< Facoltativo, vedi controllore_collegaLog. Non posseduto. */
 };
 
 /* ------------------------------------------------------------------ */
@@ -206,11 +207,12 @@ short int controllore_collegaSensorePresenza( controllore_t *c, const char *ID )
 
 static short int genericInsert( controllore_t *c, entity_type_t type, const char *ID, object_t *obj, int step )
 {
+    short int result;
+
     switch ( type ) {
         case ENTITY_BUFFER: {
             buffer_t *b = cell_getBuffer( c->cell, ID );
             bufferSensorAssoc_t *sAssoc;
-            short int result;
 
             if ( b == NULL ) { return ERR_NOT_FOUND; }
             if ( buffer_isFull( b ) ) { return ERR_FULL; }
@@ -220,29 +222,49 @@ static short int genericInsert( controllore_t *c, entity_type_t type, const char
                 sAssoc = findBufferSensorAssoc( c, ID );
                 if ( sAssoc != NULL ) { aggiornamento_status( &sAssoc->sensore, 1 ); }
             }
+            /* Un buffer e' una coda di attesa, non una stazione di
+             * lavorazione: l'ingresso in un buffer NON conta come
+             * "inizio processo" (vedi object_setStepInizioProcesso), a
+             * differenza dei case sotto. Ritorna subito, senza passare
+             * dall'aggiornamento comune a fine funzione. */
             return result;
         }
         case ENTITY_MACHINE: {
             machine_t *m = cell_getMachine( c->cell, ID );
             if ( m == NULL ) { return ERR_NOT_FOUND; }
             if ( machine_isBusy( m ) ) { return ERR_FULL; }
-            return machine_admit( m, obj, step );
+            result = machine_admit( m, obj, step );
+            break;
         }
         case ENTITY_ISP: {
             isp_t *i = cell_getISP( c->cell, ID );
             if ( i == NULL ) { return ERR_NOT_FOUND; }
             if ( isp_isBusy( i ) ) { return ERR_FULL; }
-            return isp_admit( i, obj, step );
+            result = isp_admit( i, obj, step );
+            break;
         }
         case ENTITY_NASTRO: {
             nastro_t *n = cell_getNastro( c->cell, ID );
             if ( n == NULL ) { return ERR_NOT_FOUND; }
             if ( nastro_isFull( n ) ) { return ERR_FULL; }
-            return (short int) nastro_insertObject( n, obj, step );
+            result = (short int) nastro_insertObject( n, obj, step );
+            break;
         }
         default:
             return ERR_NOT_SUPPORTED;
     }
+
+    /* Prima ammissione riuscita in una stazione vera (macchina/ISP/
+     * nastro, non un buffer): segna l'inizio del processo, UNA SOLA
+     * VOLTA per oggetto (object_setStepInizioProcesso rifiuta con
+     * ERR_DUPLICATE le chiamate successive, es. quando lo stesso
+     * oggetto entra in una stazione successiva della pipeline - qui
+     * ignoriamo volutamente l'esito, non e' un errore da propagare). */
+    if ( result == OP_SUCCESS ) {
+        object_setStepInizioProcesso( obj, step );
+    }
+
+    return result;
 }
 
 static int genericOutputCount( controllore_t *c, entity_type_t type, const char *ID )
@@ -310,8 +332,27 @@ static void segnaCompletatoSeTerminale( controllore_t *c, entity_type_t destType
                                          const char *destID, object_t *obj, int step )
 {
     if ( genericOutputCount( c, destType, destID ) == 0 ) {
+        int stepInizioProcesso;
+
         object_setStepOut( obj, step );
         c->completati++;
+
+        stepInizioProcesso = object_getStepInizioProcesso( obj );
+        if ( stepInizioProcesso != STEP_OUT_NONE ) {
+            int attesa = stepInizioProcesso - object_getStepCreation( obj );
+            int attraversamento = step - stepInizioProcesso;
+            log_evento( c->log, step, LOG_INFO,
+                        "Completamento %s in %s: attesa=%d, attraversamento=%d (totale=%d passi)",
+                        object_getID( obj ), destID, attesa, attraversamento, attesa + attraversamento );
+        } else {
+            /* Non dovrebbe succedere per un oggetto arrivato a un buffer
+             * terminale (deve essere passato per almeno una stazione),
+             * ma gestito comunque per robustezza: nessuna scomposizione
+             * disponibile, solo il tempo totale. */
+            log_evento( c->log, step, LOG_INFO,
+                        "Completamento %s in %s (tempo totale=%d passi)",
+                        object_getID( obj ), destID, step - object_getStepCreation( obj ) );
+        }
     }
 }
 
@@ -746,6 +787,7 @@ controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int
     c->sensoriPresenza = NULL;
     c->sensoriQualita = NULL;
     c->completati = 0;
+    c->log = NULL;
 
     /* Nessun sensore creato automaticamente qui: a differenza della
      * versione precedente (che creava un SensoreBuffer per OGNI buffer
@@ -781,6 +823,15 @@ void controllore_destroy( controllore_t *c )
     for ( qCur = c->sensoriQualita; qCur != NULL; qCur = qNext ) { qNext = qCur->next; free( qCur ); }
 
     free( c );
+}
+
+short int controllore_collegaLog( controllore_t *c, log_t *log )
+{
+    if ( c == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    c->log = log;
+    return OP_SUCCESS;
 }
 
 short int controllore_collegaMotore( controllore_t *c, const char *targetID, int velocita_target, int accelerazione_target )
@@ -1198,6 +1249,19 @@ int controllore_segnalaArrivo( controllore_t *c, const char *bufferIngressoID, i
     }
 
     return get_status_presenza( &sAssoc->sensore, time_on, presenza );
+}
+
+short int controllore_ammettiArrivo( controllore_t *c, const char *bufferID, object_t *obj, int step )
+{
+    if ( c == NULL || bufferID == NULL || obj == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    /* Stesso percorso (genericInsert) usato per ogni movimento interno
+     * alla cella: inserisce nel buffer E aggiorna il SensoreBuffer
+     * eventualmente agganciato, in un'unica operazione atomica - vedi
+     * doc in Controllore.h sul perche' questo va preferito a
+     * buffer_insertObject diretto per gli arrivi dall'esterno. */
+    return genericInsert( c, ENTITY_BUFFER, bufferID, obj, step );
 }
 
 long controllore_getCompletati( const controllore_t *c )
