@@ -49,6 +49,19 @@ typedef struct deviatoreAssoc {
 typedef struct bufferSensorAssoc {
     char bufferID[IDLENGTH];
     SensoreBuffer sensore;
+    /* Picco di livello_attuale osservato dall'ultima chiamata a
+     * controllore_getPercentualePiccoBuffer (o da quando il sensore e'
+     * stato creato, se mai chiamata). Aggiornato ad OGNI vero
+     * inserimento/rimozione (vedi le due chiamate ad
+     * aggiornamento_status in questo file), non solo al campionamento
+     * periodico: un buffer riempito e svuotato all'interno dello STESSO
+     * passo di simulazione (es. B2, svuotato verso ISP2 nella stessa
+     * fase "Buffer" del passo in cui M lo ha appena riempito) risulta
+     * sempre 0% se letto con un singolo poll a fine passo - questo
+     * campo cattura invece il picco transitorio anche se non e' mai
+     * "visibile" nell'istante del poll. Vedi
+     * controllore_getPercentualePiccoBuffer/statistiche_campiona. */
+    int picco_transitorio;
     struct bufferSensorAssoc *next;
 } bufferSensorAssoc_t;
 
@@ -220,7 +233,12 @@ static short int genericInsert( controllore_t *c, entity_type_t type, const char
             result = (short int) buffer_insertObject( b, obj, true );
             if ( result == OP_SUCCESS ) {
                 sAssoc = findBufferSensorAssoc( c, ID );
-                if ( sAssoc != NULL ) { aggiornamento_status( &sAssoc->sensore, 1 ); }
+                if ( sAssoc != NULL ) {
+                    aggiornamento_status( &sAssoc->sensore, 1 );
+                    if ( sAssoc->sensore.livello_attuale > sAssoc->picco_transitorio ) {
+                        sAssoc->picco_transitorio = (int) sAssoc->sensore.livello_attuale;
+                    }
+                }
             }
             /* Un buffer e' una coda di attesa, non una stazione di
              * lavorazione: l'ingresso in un buffer NON conta come
@@ -746,6 +764,7 @@ short int controllore_collegaSensoreBuffer( controllore_t *c, const char *buffer
 
     err = (short int) sensore_Buffer_init( &node->sensore, bufferID, buffer_getCapacity( b ) );
     if ( err != OP_SUCCESS ) { free( node ); return err; }
+    node->picco_transitorio = 0;
 
     node->next = c->sensoriBuffer;
     c->sensoriBuffer = node;
@@ -812,10 +831,22 @@ void controllore_destroy( controllore_t *c )
         return;
     }
 
-    /* Libera solo i nodi delle liste interne: gli object_t puntati dalla
-     * coda pending e la cell_t associata NON vengono liberati (il
-     * controllore non ne e' proprietario). */
-    for ( pCur = c->pending; pCur != NULL; pCur = pNext ) { pNext = pCur->next; free( pCur ); }
+    /* Libera i nodi delle liste interne. La coda pending e' un caso a
+     * parte rispetto a buffer/nastro/macchina/ISP: quelli sono
+     * strutture PUBBLICHE (esposte via cell.h/buffer.h/ecc.), quindi il
+     * chiamante (main) puo' iterarle da fuori e liberare i propri
+     * object_t esplicitamente. pendingNode_t invece e' privato di
+     * questo file (mai esposto in Controllore.h): nessun codice esterno
+     * potrebbe mai raggiungere quegli object_t per liberarli, quindi -
+     * a differenza degli altri moduli, che lasciano sempre il payload a
+     * carico del chiamante - qui la liberazione la fa direttamente
+     * questa funzione, come UNICO punto che ha davvero accesso alla
+     * lista. */
+    for ( pCur = c->pending; pCur != NULL; pCur = pNext ) {
+        pNext = pCur->next;
+        object_delete( pCur->obj );
+        free( pCur );
+    }
     for ( mCur = c->motori; mCur != NULL; mCur = mNext ) { mNext = mCur->next; free( mCur ); }
     for ( dCur = c->deviatori; dCur != NULL; dCur = dNext ) { dNext = dCur->next; free( dCur ); }
     for ( bCur = c->sensoriBuffer; bCur != NULL; bCur = bNext ) { bNext = bCur->next; free( bCur ); }
@@ -1079,6 +1110,33 @@ int controllore_getPercentualeBuffer( const controllore_t *c, const char *buffer
         return ERR_NOT_FOUND;
     }
     return get_percentuale_livello( &sAssoc->sensore );
+}
+
+int controllore_getPercentualePiccoBuffer( controllore_t *c, const char *bufferID )
+{
+    bufferSensorAssoc_t *sAssoc;
+    int perc;
+    long capacita;
+
+    if ( c == NULL || bufferID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    sAssoc = findBufferSensorAssoc( c, bufferID );
+    if ( sAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+
+    capacita = sAssoc->sensore.livello_massimo;
+    perc = ( capacita <= 0 ) ? 0 : (int) ( ( (long) sAssoc->picco_transitorio * 100 ) / capacita );
+
+    /* Reset della finestra di osservazione: il prossimo picco riparte dal
+     * livello ATTUALE (non da 0), cosi' un buffer che resta pieno tra due
+     * campionamenti continua a risultare "pieno" anche nella finestra
+     * successiva, invece di sembrare svuotato fino al prossimo vero
+     * incremento. */
+    sAssoc->picco_transitorio = (int) sAssoc->sensore.livello_attuale;
+
+    return perc;
 }
 
 int controllore_getStatoBuffer( const controllore_t *c, const char *bufferID )
