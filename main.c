@@ -46,7 +46,12 @@
  * parametri di simulazione (SIM_STEPS/SIM_PEZZI/SOGLIA_BUFFER/
  * GEN_TARGET_DIMENSIONX/GEN_TARGET_RAGGIO/GEN_ERRORE_PCT). Prima erano
  * tutti #define fissi qui nel main: ora arrivano da qui. */
-#define CONFIG_PATH  "lib/parser/plant_config_valid.txt"
+#define CONFIG_PATH  "plant_config_valid.txt"
+
+/* Percorso di default del file di scenario (sez. 7 della traccia: deve
+ * poter cambiare "senza ricompilare il programma" — per questo e'
+ * sovrascrivibile da riga di comando, vedi argv[1] in main()). */
+#define SCENARIO_PATH_DEFAULT  "scenario_nominale.txt"
 
 /* Genera qualche oggetto di esempio in ingresso a B1, alternando
  * materiale e "conformità" (vicinanza al target di ISP2), giusto per
@@ -87,15 +92,21 @@ static void genera_arrivi_esempio( cell_t *cell, controllore_t *ctrl, int step_a
 
 // INIZIO MAIN //
 
-int main( void )
+int main( int argc, char *argv[] )
 {
     cell_t *cell;
     controllore_t *ctrl;
     short int err;
     int step;
 
-    SimulationConfig sim;
+        SimulationConfig sim;
     int elementi_cella, attuatori_collegati;
+
+    /* Scenario da usare in questa esecuzione: passato da riga di comando
+     * (es. "./programma lib/parser/scenario_difficile.txt") oppure, se
+     * non specificato, quello nominale di default. Cosi' si cambia
+     * scenario senza ricompilare, come richiesto dalla traccia. */
+    const char *scenario_path = ( argc > 1 ) ? argv[1] : SCENARIO_PATH_DEFAULT;
 
     /* 0. Parametri di simulazione dal file di configurazione (prima
      * erano #define fissi qui nel main). */
@@ -137,6 +148,23 @@ int main( void )
         return 1;
     }
 
+    /* 3. Scenario (guasto abilitato/disabilitato + i suoi tempi, sez. 5.3
+     * e 7 del progetto): va DOPO parser_collegaSensoriQualita, perche'
+     * parser_applicaScenario richiede che il sensore di qualita'
+     * sull'ISP del guasto sia gia' agganciato. */
+    {
+        ScenarioConfig scenario;
+        int scenario_letto = parser_caricaScenario( scenario_path, &scenario, &err );
+        if ( scenario_letto ) {
+            short int err_scenario = parser_applicaScenario( ctrl, &scenario );
+            printf( "Scenario '%s' applicato: guasto %s su %s (err=%d)\n",
+                    scenario.nome, scenario.guasto_abilitato ? "ABILITATO" : "disabilitato",
+                    scenario.guasto_isp_id, err_scenario );
+        } else {
+            fprintf( stderr, "Scenario '%s' non caricato, si prosegue senza guasto configurato\n", scenario_path );
+        }
+    }
+    
     {
         char id[16];
         int idx;

@@ -158,8 +158,11 @@ static void gestisci_riga_isp( cell_t *cell, char *tokens[], int n, int line_no,
         return;
     }
 
+    (void) dimx_target;
+    (void) raggio_target;
+
     short int err;
-    if ( cell_addISP( cell, id, tempo, dimx_target, raggio_target, &err ) == NULL ) {
+    if ( cell_addISP( cell, id, tempo, &err ) == NULL ) {
         fprintf( stderr, "[parser riga %d] ISP '%s': errore creazione (codice %d), riga scartata\n",
                  line_no, id, err );
         return;
