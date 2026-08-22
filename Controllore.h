@@ -84,8 +84,18 @@ controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int
 
 /**
  * @brief Distrugge il controllore: libera le associazioni interne
- *        (sensori, Motore, Deviatore, coda pending), non la cella né
- *        gli oggetti eventualmente ancora in transito.
+ *        (sensori, Motore, Deviatore), non la cella.
+ *
+ * Libera ANCHE gli object_t ancora nella coda pending (chiamando
+ * object_delete su ciascuno): a differenza di buffer/nastro/macchina/ISP,
+ * dove il payload resta sempre a carico del chiamante perché quelle
+ * strutture sono pubbliche e iterabili da fuori (vedi buffer_delete/
+ * nastro_delete/machine_delete/isp_delete), la coda pending è privata di
+ * Controllore.c: nessun codice esterno potrebbe mai raggiungerla per
+ * liberarla, quindi lo fa questa funzione. Gli oggetti ancora dentro
+ * buffer/nastro/macchine/ISP della cella restano invece a carico del
+ * chiamante: vanno liberati PRIMA di questa chiamata (vedi il main per
+ * un esempio di pulizia completa).
  * @param c Puntatore al controllore.
  */
 void controllore_destroy( controllore_t *c );
@@ -235,6 +245,30 @@ short int controllore_step( controllore_t *c, int step_corrente );
  *         (vedi errors.h) se non trovato.
  */
 int controllore_getPercentualeBuffer( const controllore_t *c, const char *bufferID );
+
+/**
+ * @brief Percentuale di occupazione MASSIMA transitoria (0-100) toccata
+ *        dal buffer da quando questa funzione è stata chiamata l'ultima
+ *        volta (o da quando il sensore è stato creato, la prima volta).
+ *
+ * A differenza di controllore_getPercentualeBuffer (che legge il livello
+ * ISTANTANEO al momento della chiamata), questa cattura anche i picchi
+ * transitori che si verificano e si esauriscono nello stesso passo di
+ * simulazione - es. un buffer riempito da una macchina e subito dopo
+ * svuotato verso l'ISP successiva nella stessa chiamata a
+ * controllore_step, che un singolo poll a fine passo (come fa
+ * statistiche_campiona) non vedrebbe mai, leggendo sempre 0%.
+ *
+ * Ogni chiamata RESETTA la finestra di osservazione: il prossimo picco
+ * riparte dal livello attuale del buffer (non da 0), pensata per essere
+ * chiamata una volta per passo di simulazione (vedi statistiche_campiona).
+ * @param c Puntatore al controllore (non const: la chiamata resetta lo
+ *        stato interno di tracciamento del picco).
+ * @param bufferID ID del buffer.
+ * @return Percentuale di picco osservata nella finestra appena chiusa,
+ *         oppure ERR_NULL_PTR/ERR_NOT_FOUND (vedi errors.h).
+ */
+int controllore_getPercentualePiccoBuffer( controllore_t *c, const char *bufferID );
 
 /**
  * @brief Stato sintetico (BUFFER_EMPTY/BUFFER_FULL, vedi S_Buffer.h) del

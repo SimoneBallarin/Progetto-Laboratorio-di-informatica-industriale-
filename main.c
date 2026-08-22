@@ -70,7 +70,7 @@
  * FAULT_TIME_OK - vedi parser_caricaScenario in parser.c. Se il file
  * non esiste, la simulazione prosegue comunque senza guasto
  * configurato (vedi punto 3 nel corpo di main). */
-#define SCENARIO_PATH_DEFAULT  "lib/parser/scenario_difficile.txt"
+#define SCENARIO_PATH_DEFAULT  "lib/parser/scenario_nominale.txt"
 
 /* Percorso del file di log eventi (sez. 2.2/7 del progetto: "log degli
  * eventi rilevanti", errori "riportati nel log"). */
@@ -129,6 +129,78 @@ static void genera_arrivi_esempio( cell_t *cell, statistiche_t *stats , controll
      * fronte di salita (presenza=1) in questo passo. */
     controllore_segnalaArrivo( ctrl, "B1", 0, 1 );
     controllore_segnalaArrivo( ctrl, "B1", 0, 0 );
+}
+
+
+/**
+ * @brief Libera TUTTI gli object_t ancora presenti nella cella a fine
+ *        simulazione: nei buffer, sui nastri, e dentro macchine/ISP
+ *        eventualmente ancora occupate in quel momento.
+ *
+ * Nessun modulo del progetto libera mai il payload object_t da solo -
+ * buffer_delete/nastro_delete/machine_delete/isp_delete lo documentano
+ * esplicitamente ("resta di proprietà di chi lo ha creato"): senza
+ * questa pulizia, ogni object_t creato con object_create diventa un
+ * memory leak quando cell_destroy libera le strutture che lo contenevano
+ * (confermato con AddressSanitizer/LeakSanitizer). Va chiamata DOPO che
+ * il ciclo di simulazione è finito e PRIMA di cell_destroy - gli
+ * object_t ancora nella coda pending del Controllore sono invece
+ * responsabilità di controllore_destroy (vedi Controllore.h), perché
+ * quella coda è privata e main non può raggiungerla.
+ * @param cell Puntatore alla cella.
+ */
+static void libera_tutti_gli_oggetti( cell_t *cell )
+{
+    int n, idx;
+    char ID[IDLENGTH];
+
+    /* Buffer: ogni bufferObj_t wrapper puo' contenere un object_t. */
+    n = cell_getBufferCount( cell );
+    for ( idx = 0; idx < n; idx++ ) {
+        if ( cell_getBufferIDAt( cell, idx, ID ) != OP_SUCCESS ) { continue; }
+        buffer_t *b = cell_getBuffer( cell, ID );
+        if ( b == NULL ) { continue; }
+        bufferObj_t *cur = b->head;
+        while ( cur != NULL ) {
+            object_delete( cur->dato );
+            cur = cur->next;
+        }
+    }
+
+    /* Nastri: stesso schema dei buffer (lista di nastroObj_t). */
+    n = cell_getNastroCount( cell );
+    for ( idx = 0; idx < n; idx++ ) {
+        if ( cell_getNastroIDAt( cell, idx, ID ) != OP_SUCCESS ) { continue; }
+        nastro_t *nas = cell_getNastro( cell, ID );
+        if ( nas == NULL ) { continue; }
+        nastroObj_t *cur = nas->head;
+        while ( cur != NULL ) {
+            object_delete( cur->dato );
+            cur = cur->next;
+        }
+    }
+
+    /* Macchine: al massimo un oggetto alla volta, se ancora occupate
+     * (es. lavorazione interrotta a metà dalla fine della simulazione,
+     * vedi il caso "P16" discusso in conversazione). */
+    n = cell_getMachineCount( cell );
+    for ( idx = 0; idx < n; idx++ ) {
+        if ( cell_getMachineIDAt( cell, idx, ID ) != OP_SUCCESS ) { continue; }
+        machine_t *m = cell_getMachine( cell, ID );
+        if ( m != NULL && m->oggetto_in_lavorazione != NULL ) {
+            object_delete( m->oggetto_in_lavorazione );
+        }
+    }
+
+    /* ISP: stesso schema delle macchine. */
+    n = cell_getISPCount( cell );
+    for ( idx = 0; idx < n; idx++ ) {
+        if ( cell_getISPIDAt( cell, idx, ID ) != OP_SUCCESS ) { continue; }
+        isp_t *i = cell_getISP( cell, ID );
+        if ( i != NULL && i->oggetto_in_controllo != NULL ) {
+            object_delete( i->oggetto_in_controllo );
+        }
+    }
 }
 
 
@@ -205,6 +277,7 @@ int main( int argc, char *argv[] )
     statistiche_monitoraBuffer( stats, "B_riqualifica" ); 
     statistiche_monitoraBuffer( stats, "B_TRASH" );      
     statistiche_monitoraMotore( stats, "M" );  
+    statistiche_monitoraMotore( stats, "N1" );  
     statistiche_monitoraISP( stats, "ISP1" );  
     statistiche_monitoraISP( stats, "ISP2" );             
     statistiche_monitoraSensorePresenza( stats, "B1" );
@@ -352,11 +425,14 @@ int main( int argc, char *argv[] )
     log_stampaRiepilogo( log );
     log_destroy( log );
 
-    /* NB: la pulizia degli object_t inseriti resta da fare (nessun
-     * modulo del progetto li libera automaticamente): qui li lasciamo
-     * volutamente, dato che serve prima decidere chi ne è responsabile
-     * a fine simulazione (o se il progetto li considera "persi" nei
-     * buffer di uscita finché non c'è un log/registro dedicato). */
+    /* Libera tutti gli object_t rimasti nella cella (buffer, nastri,
+     * macchine/ISP eventualmente ancora occupate): va fatto DOPO aver
+     * letto i buffer terminali per le statistiche appena sopra (altrimenti
+     * statistiche_registraCompletamento leggerebbe oggetti già liberati),
+     * e PRIMA di cell_destroy - vedi doc di libera_tutti_gli_oggetti. Gli
+     * object_t ancora in coda pending sono liberati da controllore_destroy
+     * (coda privata del Controllore, main non puo' raggiungerla). */
+    libera_tutti_gli_oggetti( cell );
 
     controllore_destroy( ctrl );
     cell_destroy( cell );
