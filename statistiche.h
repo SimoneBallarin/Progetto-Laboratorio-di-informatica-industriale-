@@ -114,10 +114,14 @@ short int statistiche_monitoraSensorePresenza( statistiche_t *s, const char *ID 
  *        passo, media e massimo di occupazione restano a zero (non si
  *        possono calcolare a posteriori dallo stato finale).
  * @param s Puntatore alla struct.
- * @param ctrl Puntatore al controllore (sola lettura).
+ * @param ctrl Puntatore al controllore. NON è const: la funzione chiama
+ *        internamente controllore_getPercentualePiccoBuffer, che
+ *        resetta il tracciamento del picco transitorio del buffer ad
+ *        ogni chiamata (vedi Controllore.h) - per questo va chiamata
+ *        una volta sola per passo, qui, e non altrove.
  * @return OP_SUCCESS, o ERR_NULL_PTR se s o ctrl sono NULL.
  */
-short int statistiche_campiona( statistiche_t *s, const controllore_t *ctrl );
+short int statistiche_campiona( statistiche_t *s, controllore_t *ctrl );
 
 /**
  * @brief Registra un blocco (un inserimento rifiutato perché un buffer
@@ -174,7 +178,14 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
  * @param n_step_simulazione Numero di passi totali della simulazione
  *        (statistica #1) - non è tenuto internamente dalla libreria,
  *        va passato da chi lo sa (il main).
+ * @param path_output Percorso di un file .txt su cui scrivere lo STESSO
+ *        riepilogo stampato su stdout (sovrascrive un eventuale file
+ *        preesistente con lo stesso nome), oppure NULL per stampare
+ *        solo su stdout come nella versione precedente. Se il file non
+ *        è apribile, un avviso viene stampato su stderr e la funzione
+ *        prosegue comunque con la sola stampa su stdout (un file non
+ *        scrivibile non deve far perdere anche l'output a schermo).
  */
-void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione );
+void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione, const char *path_output );
 
 #endif /* STATISTICHE_H */

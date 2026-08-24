@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "statistiche.h"
 
@@ -45,9 +46,19 @@ typedef struct presenzaStat {
 typedef struct {
     long completati;
     long completati_entro_scadenza;
-    long somma_tempo_attraversamento;
+    long somma_tempo_attraversamento;   /**< Tempo TOTALE in sistema: stepOut - stepCreation (coda + processo). */
     int  tempo_minimo;   /**< -1 se nessun oggetto ancora registrato per questa priorità. */
     int  tempo_massimo;
+    /* Scomposizione del tempo totale (vedi object_getStepPartial):
+     * quanto di quel tempo e' stato speso in coda nel buffer di ingresso
+     * prima di iniziare la lavorazione, e quanto nella pipeline vera e
+     * propria. "conteggiati" puo' differire da "completati" se per
+     * qualche oggetto stepPartial non risultasse mai impostato
+     * (non dovrebbe succedere per un oggetto arrivato a un buffer
+     * terminale, ma viene gestito comunque per robustezza). */
+    long completati_con_scomposizione;
+    long somma_tempo_attesa;
+    long somma_tempo_processo;
 } prioritaStat_t;
 
 struct statistiche {
@@ -99,6 +110,9 @@ statistiche_t *statistiche_create( short int *errCode )
         s->priorita[p].somma_tempo_attraversamento = 0;
         s->priorita[p].tempo_minimo = -1;
         s->priorita[p].tempo_massimo = -1;
+        s->priorita[p].completati_con_scomposizione = 0;
+        s->priorita[p].somma_tempo_attesa = 0;
+        s->priorita[p].somma_tempo_processo = 0;
     }
 
     if ( errCode != NULL ) { *errCode = OP_SUCCESS; }
@@ -239,10 +253,11 @@ short int statistiche_monitoraSensorePresenza( statistiche_t *s, const char *ID 
 /*  RACCOLTA DATI (da chiamare durante la simulazione)                 */
 /* ------------------------------------------------------------------ */
 
-short int statistiche_campiona( statistiche_t *s, const controllore_t *ctrl )
+short int statistiche_campiona( statistiche_t *s, controllore_t *ctrl )
 {
     bufferStat_t *cur;
     int perc;
+    int perc_picco;
 
     if ( s == NULL || ctrl == NULL ) {
         return ERR_NULL_PTR;
@@ -258,8 +273,18 @@ short int statistiche_campiona( statistiche_t *s, const controllore_t *ctrl )
         }
         cur->somma_percentuale += perc;
         cur->campioni++;
-        if ( perc > cur->massimo_percentuale ) {
-            cur->massimo_percentuale = perc;
+
+        /* Per la "massima" usiamo il picco TRANSITORIO (vedi
+         * controllore_getPercentualePiccoBuffer), non il livello
+         * istantaneo: un buffer riempito e svuotato nello stesso passo
+         * (es. tra macchina e ISP successiva) risulterebbe sempre 0% se
+         * letto con un singolo poll a fine passo, anche se per un
+         * istante ha davvero contenuto un oggetto. Questa chiamata
+         * resetta la finestra di osservazione: va fatta una volta sola
+         * per campionamento (qui), non ripetuta altrove. */
+        perc_picco = controllore_getPercentualePiccoBuffer( ctrl, cur->ID );
+        if ( perc_picco > cur->massimo_percentuale ) {
+            cur->massimo_percentuale = perc_picco;
         }
     }
 
@@ -288,6 +313,7 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
 {
     int stepOut;
     int stepCreation;
+    int stepPartial;
     int tempo;
     short int priorita;
     prioritaStat_t *ps;
@@ -319,6 +345,19 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
         ps->completati_entro_scadenza++;
     }
 
+    /* Scomposizione tempo di attesa (coda nel buffer di ingresso) /
+     * tempo di processo (pipeline vera e propria), vedi
+     * object_getStepPartial. Se per qualche motivo non risulta
+     * mai impostato (STEP_OUT_NONE), l'oggetto viene escluso solo da
+     * QUESTA scomposizione: resta comunque conteggiato in "completati"
+     * e nel tempo totale sopra. */
+    stepPartial = object_getStepPartial( obj );
+    if ( stepPartial != STEP_OUT_NONE ) {
+        ps->completati_con_scomposizione++;
+        ps->somma_tempo_attesa   += ( stepPartial - stepCreation );
+        ps->somma_tempo_processo += ( stepOut - stepPartial );
+    }
+
     return OP_SUCCESS;
 }
 
@@ -326,62 +365,92 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
 /*  STAMPA                                                             */
 /* ------------------------------------------------------------------ */
 
-void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione )
+/**
+ * @brief Stampa in stile printf su stdout E, se f non è NULL, anche su
+ *        quel file - stessa riga, stesso contenuto, due destinazioni.
+ *        Helper interno usato da statistiche_stampa per duplicare
+ *        l'output su file senza raddoppiare ogni singola chiamata.
+ */
+static void stampa_dual( FILE *f, const char *formato, ... )
+{
+    va_list args;
+
+    va_start( args, formato );
+    vprintf( formato, args );
+    va_end( args );
+
+    if ( f != NULL ) {
+        va_start( args, formato );
+        vfprintf( f, formato, args );
+        va_end( args );
+    }
+}
+
+void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione, const char *path_output )
 {
     bufferStat_t *bCur;
     motoreStat_t *mCur;
     long totale_completati = 0;
     int p;
+    FILE *f = NULL;
+
+    if ( path_output != NULL ) {
+        f = fopen( path_output, "w" );
+        if ( f == NULL ) {
+            fprintf( stderr, "statistiche_stampa: impossibile aprire '%s', si procede solo su stdout\n", path_output );
+        }
+    }
 
     if ( s == NULL ) {
-        printf( "statistiche_stampa: statistiche NULL\n" );
+        stampa_dual( f, "statistiche_stampa: statistiche NULL\n" );
+        if ( f != NULL ) { fclose( f ); }
         return;
     }
 
-    printf( "\n=== STATISTICHE ===\n" );
+    stampa_dual( f, "\n=== STATISTICHE ===\n" );
 
-    printf( "\n-- Tempo --\n" );
-    printf( "  Tempo totale di simulazione: %d passi\n", n_step_simulazione );
+    stampa_dual( f, "\n-- Tempo --\n" );
+    stampa_dual( f, "  Tempo totale di simulazione: %d passi\n", n_step_simulazione );
 
-    printf( "\n-- Occupazione buffer (media/massima nel tempo, su tutti i campioni raccolti) --\n" );
+    stampa_dual( f, "\n-- Occupazione buffer (media/massima nel tempo, su tutti i campioni raccolti) --\n" );
     if ( s->buffer == NULL ) {
-        printf( "  (nessun buffer monitorato: vedi statistiche_monitoraBuffer)\n" );
+        stampa_dual( f, "  (nessun buffer monitorato: vedi statistiche_monitoraBuffer)\n" );
     }
     for ( bCur = s->buffer; bCur != NULL; bCur = bCur->next ) {
         double media = ( bCur->campioni > 0 ) ? ( (double) bCur->somma_percentuale / bCur->campioni ) : 0.0;
-        printf( "  %-16s media=%5.1f%%  massima=%3d%%  campioni=%-4d  blocchi=%ld\n",
+        stampa_dual( f, "  %-16s media=%5.1f%%  massima=%3d%%  campioni=%-4d  blocchi=%ld\n",
                 bCur->ID, media, bCur->massimo_percentuale, bCur->campioni, bCur->blocchi );
     }
     if ( s->blocchi_non_monitorati > 0 ) {
-        printf( "  (altri %ld blocchi su buffer non monitorati)\n", s->blocchi_non_monitorati );
+        stampa_dual( f, "  (altri %ld blocchi su buffer non monitorati)\n", s->blocchi_non_monitorati );
     }
 
-    printf( "\n-- Motori (tempo cumulativo ON/OFF, in passi di simulazione) --\n" );
+    stampa_dual( f, "\n-- Motori (tempo cumulativo ON/OFF, in passi di simulazione) --\n" );
     if ( s->motori == NULL ) {
-        printf( "  (nessun motore monitorato: vedi statistiche_monitoraMotore)\n" );
+        stampa_dual( f, "  (nessun motore monitorato: vedi statistiche_monitoraMotore)\n" );
     }
     for ( mCur = s->motori; mCur != NULL; mCur = mCur->next ) {
         if ( ctrl == NULL ) {
-            printf( "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere il tempo)\n", mCur->ID );
+            stampa_dual( f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere il tempo)\n", mCur->ID );
             continue;
         }
         long on = controllore_getTempoMotoreOn( ctrl, mCur->ID );
         long off = controllore_getTempoMotoreOff( ctrl, mCur->ID );
-        printf( "  %-8s ON=%-5ld OFF=%-5ld totale=%ld\n", mCur->ID, on, off, on + off );
+        stampa_dual( f, "  %-8s ON=%-5ld OFF=%-5ld totale=%ld\n", mCur->ID, on, off, on + off );
     }
 
-    printf( "\n-- Sensori di qualità (per ISP monitorata) --\n" );
+    stampa_dual( f, "\n-- Sensori di qualità (per ISP monitorata) --\n" );
     if ( s->isp == NULL ) {
-        printf( "  (nessuna ISP monitorata: vedi statistiche_monitoraISP)\n" );
+        stampa_dual( f, "  (nessuna ISP monitorata: vedi statistiche_monitoraISP)\n" );
     }
     for ( ispStat_t *iCur = s->isp; iCur != NULL; iCur = iCur->next ) {
         if ( ctrl == NULL ) {
-            printf( "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere)\n", iCur->ID );
+            stampa_dual( f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere)\n", iCur->ID );
             continue;
         }
         long letture = controllore_getLettureQualita( ctrl, iCur->ID );
         if ( letture < 0 ) {
-            printf( "  %-8s nessun sensore di qualità agganciato (vedi controllore_collegaSensoreQualita)\n", iCur->ID );
+            stampa_dual( f, "  %-8s nessun sensore di qualità agganciato (vedi controllore_collegaSensoreQualita)\n", iCur->ID );
             continue;
         }
         long anomalie = controllore_getAnomalieQualita( ctrl, iCur->ID );
@@ -389,29 +458,29 @@ void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int 
         long matA = controllore_getMaterialeA( ctrl, iCur->ID );
         long matB = controllore_getMaterialeB( ctrl, iCur->ID );
         controllore_getTipoLettureQualita( ctrl, iCur->ID, tipi );
-        printf( "  %-8s letture=%-4ld anomalie=%-4ld  CONFORME=%ld RIVALUTAZIONE=%ld SCARTO=%ld  materiale A=%ld B=%ld\n",
+        stampa_dual( f, "  %-8s letture=%-4ld anomalie=%-4ld  CONFORME=%ld RIVALUTAZIONE=%ld SCARTO=%ld  materiale A=%ld B=%ld\n",
                 iCur->ID, letture, anomalie, tipi[0], tipi[1], tipi[2], matA, matB );
     }
 
-    printf( "\n-- Sensori di presenza (per ID monitorato) --\n" );
+    stampa_dual( f, "\n-- Sensori di presenza (per ID monitorato) --\n" );
     if ( s->presenza == NULL ) {
-        printf( "  (nessun sensore di presenza monitorato: vedi statistiche_monitoraSensorePresenza)\n" );
+        stampa_dual( f, "  (nessun sensore di presenza monitorato: vedi statistiche_monitoraSensorePresenza)\n" );
     }
     for ( presenzaStat_t *pCur = s->presenza; pCur != NULL; pCur = pCur->next ) {
         if ( ctrl == NULL ) {
-            printf( "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere)\n", pCur->ID );
+            stampa_dual( f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere)\n", pCur->ID );
             continue;
         }
         long letture = controllore_getLetturePresenza( ctrl, pCur->ID );
         if ( letture < 0 ) {
-            printf( "  %-8s nessun sensore di presenza agganciato (vedi controllore_collegaSensorePresenza)\n", pCur->ID );
+            stampa_dual( f, "  %-8s nessun sensore di presenza agganciato (vedi controllore_collegaSensorePresenza)\n", pCur->ID );
             continue;
         }
         long rilevamenti = controllore_getRilevamentiPresenza( ctrl, pCur->ID );
-        printf( "  %-8s letture=%-4ld  rilevamenti (nuovi arrivi distinti)=%ld\n", pCur->ID, letture, rilevamenti );
+        stampa_dual( f, "  %-8s letture=%-4ld  rilevamenti (nuovi arrivi distinti)=%ld\n", pCur->ID, letture, rilevamenti );
     }
 
-    printf( "\n-- Tempo di attraversamento e completamento, per classe di priorità --\n" );
+    stampa_dual( f, "\n-- Tempo di attraversamento e completamento, per classe di priorità --\n" );
     for ( p = 0; p <= PRIORITY_MAX; p++ ) {
         const prioritaStat_t *ps = &s->priorita[p];
         if ( ps->completati == 0 ) {
@@ -419,9 +488,19 @@ void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int 
         }
         double media_tempo = (double) ps->somma_tempo_attraversamento / ps->completati;
         double perc_entro_scadenza = 100.0 * ps->completati_entro_scadenza / ps->completati;
-        printf( "  priorita' %2d: completati=%-4ld  tempo(min/media/max)=%d/%.1f/%d  entro scadenza=%.0f%%\n",
+        stampa_dual( f, "  priorita' %2d: completati=%-4ld  tempo TOTALE(min/media/max)=%d/%.1f/%d  entro scadenza=%.0f%%\n",
                 p, ps->completati, ps->tempo_minimo, media_tempo, ps->tempo_massimo, perc_entro_scadenza );
+        if ( ps->completati_con_scomposizione > 0 ) {
+            double media_attesa          = (double) ps->somma_tempo_attesa   / ps->completati_con_scomposizione;
+            double media_attraversamento = (double) ps->somma_tempo_processo / ps->completati_con_scomposizione;
+            stampa_dual( f, "                 di cui (media): attesa in coda=%.1f + attraversamento=%.1f = %.1f\n",
+                    media_attesa, media_attraversamento, media_attesa + media_attraversamento );
+        }
         totale_completati += ps->completati;
     }
-    printf( "  TOTALE completati (con tempo di attraversamento registrato): %ld\n", totale_completati );
+    stampa_dual( f, "  TOTALE completati (con tempo di attraversamento registrato): %ld\n", totale_completati );
+
+    if ( f != NULL ) {
+        fclose( f );
+    }
 }
