@@ -23,7 +23,7 @@ object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_ty
         }
         return NULL;
     }
-    if ( strlen( Obj_ID ) >= IDLENGTH ) {
+    if ( strlen( Obj_ID ) == 0 || strlen( Obj_ID ) >= IDLENGTH ) {
         if ( errCode != NULL ) {
             *errCode = ERR_ID_INVALID;
         }
@@ -67,6 +67,7 @@ object_t *object_create( const char *Obj_ID, short int Obj_priority, char Obj_ty
     obj->ID_LOCATION[IDLENGTH - 1] = '\0';
 
     obj->stepCreation = step;
+    obj->stepPartial = STEP_OUT_NONE;
     obj->stepOut = STEP_OUT_NONE;
     obj->dimensionX = Obj_dimensionX;
     obj->raggio = Obj_raggio;
@@ -115,6 +116,26 @@ short int object_setStepOut( object_t *Obj, int step )
     }
 
     Obj->stepOut = step;
+
+    return OP_SUCCESS;
+}
+
+short int object_setStepPartial( object_t *Obj, int step )
+{
+    if ( Obj == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    if ( Obj->stepPartial != STEP_OUT_NONE ) {
+        /* Gia' impostato in precedenza (l'oggetto e' entrato in una
+         * stazione successiva della pipeline): non va sovrascritto,
+         * vedi doc in object.h. */
+        return ERR_DUPLICATE;
+    }
+    if ( step < Obj->stepCreation ) {
+        return ERR_OUT_OF_RANGE;
+    }
+
+    Obj->stepPartial = step;
 
     return OP_SUCCESS;
 }
@@ -204,6 +225,14 @@ int object_getStepOut( const object_t *Obj )
     return Obj->stepOut;
 }
 
+int object_getStepPartial( const object_t *Obj )
+{
+    if ( Obj == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    return Obj->stepPartial;
+}
+
 double object_getDimensionX( const object_t *Obj )
 {
     if ( Obj == NULL ) {
@@ -234,7 +263,7 @@ void object_print( const object_t *Obj )
         return;
     }
 
-    printf( "Object[ID=%s, priority=%d, type=%c, location=%s, stepCreation=%d, stepOut=%d, dimensionX=%.2f, raggio=%.2f]\n",
+    printf( "Object[ID=%s, priority=%d, type=%c, location=%s, stepCreation=%d, stepPartial=%d, stepOut=%d, dimensionX=%.2f, raggio=%.2f]\n",
             Obj->ID, Obj->priority, Obj->type, Obj->ID_LOCATION,
-            Obj->stepCreation, Obj->stepOut, Obj->dimensionX, Obj->raggio );
+            Obj->stepCreation, Obj->stepPartial, Obj->stepOut, Obj->dimensionX, Obj->raggio );
 }

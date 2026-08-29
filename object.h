@@ -38,7 +38,13 @@ typedef struct {
     short int priority;     /**< priorità dell'oggetto, vedi PRIORITY_MIN/PRIORITY_MAX. */
     char type;      /**< tipologia: A = acciaio, B = rame. */
     char ID_LOCATION[IDLENGTH];  /**< ID della locazione corrente. */
-    int stepCreation;           /**< Step temporale all'entrata della linea. */
+    int stepCreation;           /**< Step temporale all'entrata della linea (in un buffer di ingresso). */
+    int stepPartial;     /**< Step in cui l'oggetto occupa per la prima volta una stazione di
+                                   *   lavorazione/controllo (non un buffer): distingue il tempo di
+                                   *   ATTESA in coda (stepPartial - stepCreation) dal tempo di
+                                   *   PROCESSO vero e proprio (stepOut - stepPartial). Vale
+                                   *   STEP_OUT_NONE finché l'oggetto non ha ancora lasciato il buffer
+                                   *   di ingresso. */
     int stepOut;           /**< step temporale all'uscita della linea, STEP_OUT_NONE se non ancora uscito. */
     double dimensionX;   /**< Dimensione oggetto fittizia. */
     double raggio;        /**< Raggio dell'oggetto (per il calcolo del materiale in S_Qualita). */
@@ -78,6 +84,25 @@ short int object_setLocation( object_t *Obj, const char *newID );
  * @return OP_SUCCESS se l'operazione è andata a buon fine, un codice ERR_* (vedi errors.h) in caso di errore.
  */
 short int object_setStepOut( object_t *Obj, int step );
+
+/**
+ * @brief imposta lo step in cui l'oggetto occupa per la prima volta una
+ *        stazione di lavorazione/controllo (non un buffer di attesa).
+ *
+ * Va chiamata UNA SOLA VOLTA per oggetto, la prima volta che lascia il
+ * buffer di ingresso: chiamate successive (es. quando l'oggetto entra
+ * nella stazione successiva della pipeline) non devono sovrascrivere il
+ * valore già impostato. Serve a separare, a fine simulazione, il tempo
+ * di ATTESA in coda (stepPartial - stepCreation) dal tempo di
+ * PROCESSO vero e proprio (stepOut - stepPartial) — vedi
+ * object_getStepPartial e statistiche_registraCompletamento.
+ * @param Obj puntatore all'oggetto.
+ * @param step step temporale di inizio processo.
+ * @return OP_SUCCESS se l'operazione è andata a buon fine, un codice
+ *         ERR_* (vedi errors.h) in caso di errore (incluso
+ *         ERR_DUPLICATE se era già stato impostato in precedenza).
+ */
+short int object_setStepPartial( object_t *Obj, int step );
 
 /**
  * @brief imposta/aggiorna la dimensione fittizia dell'oggetto.
@@ -155,6 +180,16 @@ int object_getStepCreation( const object_t *Obj );
  *         ancora uscito), oppure ERR_NULL_PTR se Obj è NULL.
  */
 int object_getStepOut( const object_t *Obj );
+
+/**
+ * @brief Step temporale in cui l'oggetto ha occupato per la prima volta
+ *        una stazione di lavorazione/controllo (non un buffer).
+ * @param Obj puntatore all'oggetto.
+ * @return step di inizio processo (>= 0 se già avvenuto), STEP_OUT_NONE
+ *         se l'oggetto è ancora nel buffer di ingresso, oppure
+ *         ERR_NULL_PTR se Obj è NULL.
+ */
+int object_getStepPartial( const object_t *Obj );
 
 /**
  * @brief Dimensione fittizia corrente dell'oggetto.
