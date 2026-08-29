@@ -349,6 +349,18 @@ void nastro_print( const nastro_t *n )
     while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
     printf( "\n" );
 
+    printf( "  sensori: " );
+    idCur = n->sensorList;
+    if ( idCur == NULL ) { printf( "(nessuno)" ); }
+    while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
+    printf( "\n" );
+
+    printf( "  attuatori: " );
+    idCur = n->actuatorList;
+    if ( idCur == NULL ) { printf( "(nessuno)" ); }
+    while ( idCur != NULL ) { printf( "%s ", idCur->ID ); idCur = idCur->next; }
+    printf( "\n" );
+
     objCur = n->head;
     while ( objCur != NULL ) {
         printf( "  [ingresso@%d] ", objCur->step_ingresso );

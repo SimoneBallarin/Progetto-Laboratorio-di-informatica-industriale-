@@ -109,28 +109,45 @@ int parser_collegaSensoriPresenza( controllore_t *ctrl, const char *path, short 
 int parser_collegaSensoriQualita( controllore_t *ctrl, const char *path, short int *errCode );
 
 /**
- * @brief Legge il file oggetti e li inserisce nel buffer di ingresso
- *        indicato, segnalando ogni arrivo al controllore.
+ * @brief Legge il file oggetti e SCHEDULA (vedi controllore_schedulaArrivo)
+ *        l'ingresso di ciascuno nel buffer indicato, al proprio
+ *        ARRIVAL_STEP - non li inserisce subito: ogni oggetto entra
+ *        davvero nella cella solo quando controllore_step raggiunge lo
+ *        step indicato dal file, con arrivi realisticamente distribuiti
+ *        nel tempo invece che tutti in un unico blocco al caricamento.
  *
  * Formato CSV atteso, con header opzionale:
  *   ID,PRIORITY,TYPE,ARRIVAL_STEP,DIMENSIONX,RAGGIO
  *   P001,2,A,0,101.0,10.5
  *
- * Per ogni riga valida: object_create -> buffer_insertObject (nel
- * buffer bufferIngressoID, con ordinamento per priorita') ->
- * object_setLocation -> controllore_segnalaArrivo.
+ * Per ogni riga valida: object_create (stepCreation = ARRIVAL_STEP) ->
+ * controllore_schedulaArrivo (SensoreBuffer/SensorePresenza aggiornati
+ * correttamente al momento dell'ammissione effettiva, non qui).
  *
- * @param cell Cella gia' costruita (deve gia' contenere bufferIngressoID).
+ * @param cell Cella gia' costruita (deve gia' contenere bufferIngressoID:
+ *        usata solo per verificare che esista, l'inserimento vero e
+ *        proprio passa da ctrl).
  * @param ctrl Controllore gia' creato.
  * @param path Percorso del file oggetti.
  * @param bufferIngressoID ID del buffer di ingresso (es. "B1") in cui
- *        inserire tutti gli oggetti letti.
+ *        far entrare tutti gli oggetti letti, ciascuno al proprio
+ *        ARRIVAL_STEP.
  * @param errCode puntatore opzionale (puo' essere NULL), vedi
  *        parser_costruisciCella.
- * @return Numero di oggetti caricati con successo.
+ * @return Numero di oggetti schedulati con successo (non ancora
+ *         necessariamente entrati nella cella: vedi
+ *         controllore_getArriviSchedulatiCount per quanti sono ancora
+ *         in attesa in un dato momento).
  */
 int parser_caricaOggetti( cell_t *cell, controllore_t *ctrl, const char *path,
                            const char *bufferIngressoID, short int *errCode );
+
+/** Numero massimo di ISP guaste contemporaneamente in uno scenario (vedi
+ * FAULT_ISP in parser_caricaScenario: elenco separato da virgole, es.
+ * "FAULT_ISP=ISP1,ISP2"). Più che sufficiente per questo impianto (solo
+ * ISP1/ISP2 esistono), tenuto basso apposta: uno scenario con 10 ISP
+ * guaste contemporaneamente non avrebbe senso da leggere/discutere. */
+#define MAX_GUASTO_ISP 4
 
 /**
  * @brief Configurazione di scenario: cosa varia tra "scenario nominale"
@@ -141,9 +158,10 @@ typedef struct {
     char   nome[64];
     double moltiplicatore_carico;   /* riservato per usi futuri (es. generazione arrivi) */
     bool   guasto_abilitato;
-    char   guasto_isp_id[IDLENGTH]; /* su quale ISP applicare il guasto, es. "ISP2" */
-    int    guasto_tempo_errore;     /* passi di funzionamento OK prima del guasto */
-    int    guasto_tempo_ok;         /* passi di guasto prima di tornare OK */
+    char   guasto_isp_id[MAX_GUASTO_ISP][IDLENGTH]; /* una o piu' ISP: "FAULT_ISP=ISP1,ISP2" nel file (virgola, senza spazi) */
+    int    n_guasto_isp;            /* quante entrate valide ci sono in guasto_isp_id (0 = nessun guasto da applicare) */
+    int    guasto_tempo_errore;     /* passi di funzionamento OK prima del guasto, STESSO valore per tutte le ISP elencate */
+    int    guasto_tempo_ok;         /* passi di guasto prima di tornare OK, STESSO valore per tutte le ISP elencate */
 } ScenarioConfig;
 
 /**
@@ -158,22 +176,22 @@ typedef struct {
 int parser_caricaScenario( const char *path, ScenarioConfig *out, short int *errCode );
 
 /**
- * @brief Applica una ScenarioConfig gia' letta alla cella: se
- *        guasto_abilitato e' vero, chiama isp_impostaGuasto sull'ISP
- *        indicata da guasto_isp_id; se e' falso, disattiva
- *        esplicitamente il guasto su quella ISP (utile per passare da
- *        uno scenario difficile a uno nominale senza ricreare la cella).
- * @param cell Cella gia' costruita (deve contenere guasto_isp_id).
- * @param scenario Scenario gia' letto con parser_caricaScenario.
- * @return OP_SUCCESS se applicato, un codice ERR_* (vedi errors.h)
- *         altrimenti (es. ERR_NOT_FOUND se guasto_isp_id non esiste).
- */
-/**
  * @brief Applica una ScenarioConfig gia' letta: chiama
- *        controllore_impostaGuastoQualita sull'ISP indicata da
- *        guasto_isp_id. Richiede che un SensoreQualita sia GIA' stato
- *        agganciato a quella ISP con parser_collegaSensoriQualita,
- *        altrimenti restituisce ERR_NOT_FOUND.
+ *        controllore_impostaGuastoQualita su OGNI ISP elencata in
+ *        guasto_isp_id (una o piu', vedi FAULT_ISP nel file di
+ *        scenario), con lo stesso guasto_abilitato/guasto_tempo_errore/
+ *        guasto_tempo_ok per tutte. Richiede che un SensoreQualita sia
+ *        GIA' stato agganciato a ciascuna di quelle ISP con
+ *        parser_collegaSensoriQualita, altrimenti quella specifica ISP
+ *        viene saltata con un avviso su stderr (le altre vengono
+ *        comunque applicate) e la funzione restituisce ERR_NOT_FOUND
+ *        alla fine.
+ * @param ctrl Controllore gia' creato.
+ * @param scenario Scenario gia' letto con parser_caricaScenario.
+ * @return OP_SUCCESS se applicato a tutte le ISP elencate (o se
+ *         n_guasto_isp è 0, nessun guasto da configurare), ERR_NOT_FOUND
+ *         se almeno una non e' stata trovata/non aveva un sensore
+ *         agganciato, ERR_NULL_PTR se ctrl o scenario sono NULL.
  */
 short int parser_applicaScenario( controllore_t *ctrl, const ScenarioConfig *scenario );
 
@@ -189,6 +207,7 @@ short int parser_applicaScenario( controllore_t *ctrl, const ScenarioConfig *sce
 typedef struct {
     int    n_step_simulazione;
     int    n_pezzi_prova;
+    int    n_pezzi_prova_b2;       /* pezzi pre-caricati in B2 all'avvio (default 0, vedi SIM_PEZZI_B2) */
     double soglia_buffer;
     double gen_target_dimensionX;  /* misura nominale di ingresso, es. 100 */
     double gen_target_raggio;      /* misura nominale di ingresso, es. 10 */
@@ -198,8 +217,9 @@ typedef struct {
 /**
  * @brief Legge il file di configurazione impianto (lo stesso passato a
  *        parser_costruisciCella) ed estrae i parametri globali di
- *        simulazione (righe SIM_STEPS=, SIM_PEZZI=, SOGLIA_BUFFER=,
- *        GEN_TARGET_DIMENSIONX=, GEN_TARGET_RAGGIO=, GEN_ERRORE_PCT=).
+ *        simulazione (righe SIM_STEPS=, SIM_PEZZI=, SIM_PEZZI_B2=,
+ *        SOGLIA_BUFFER=, GEN_TARGET_DIMENSIONX=, GEN_TARGET_RAGGIO=,
+ *        GEN_ERRORE_PCT=).
  * @param path Percorso del file di configurazione impianto.
  * @param out Struct da riempire (viene azzerata e reinizializzata con
  *        dei default ragionevoli per ogni chiave assente dal file).

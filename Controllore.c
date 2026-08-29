@@ -82,6 +82,7 @@ typedef struct qualitaSensorAssoc {
     char ispID[IDLENGTH];
     SensoreQualita sensore;
     MalfunzionamentoSensore guasto;
+    long step_bloccata_per_guasto;  /**< Vedi controllore_getStepBloccoGuasto. */
     struct qualitaSensorAssoc *next;
 } qualitaSensorAssoc_t;
 
@@ -104,10 +105,27 @@ typedef struct pendingNode {
     struct pendingNode *next;
 } pendingNode_t;
 
+/**
+ * @brief Nodo della coda di arrivi ESTERNI schedulati per uno step
+ *        futuro (vedi controllore_schedulaArrivo) - diversa dalla coda
+ *        "pending" sopra: quella e' per oggetti gia' DENTRO la cella che
+ *        aspettano una destinazione libera; questa e' per oggetti che
+ *        non sono ancora entrati affatto, in attesa del loro
+ *        ARRIVAL_STEP (vedi parser_caricaOggetti in parser.c).
+ */
+typedef struct arrivoSchedulato {
+    object_t *obj;
+    char bufferID[IDLENGTH];
+    int arrival_step;
+    struct arrivoSchedulato *next;
+} arrivoSchedulato_t;
+
 struct controllore {
     cell_t *cell;                       /**< Non posseduta dal controllore. */
     double soglia_buffer;
+    strategia_controllo_t strategia;    /**< Vedi strategia_controllo_t in Controllore.h. */
     pendingNode_t *pending;
+    arrivoSchedulato_t *arriviSchedulati;   /**< Vedi controllore_schedulaArrivo. */
     motoreAssoc_t *motori;
     deviatoreAssoc_t *deviatori;
     bufferSensorAssoc_t *sensoriBuffer;
@@ -230,7 +248,12 @@ static short int genericInsert( controllore_t *c, entity_type_t type, const char
             if ( b == NULL ) { return ERR_NOT_FOUND; }
             if ( buffer_isFull( b ) ) { return ERR_FULL; }
 
-            result = (short int) buffer_insertObject( b, obj, true );
+            /* Ordine di inserimento coerente con la strategia corrente
+             * (vedi strategia_controllo_t in Controllore.h): priorità
+             * decrescente per STRATEGIA_PRIORITA_BUFFER_AWARE (Strategia
+             * 1, comportamento storico), ordine di arrivo (FIFO) per
+             * STRATEGIA_FCFS (Strategia 2). */
+            result = (short int) buffer_insertObject( b, obj, c->strategia == STRATEGIA_PRIORITA_BUFFER_AWARE );
             if ( result == OP_SUCCESS ) {
                 sAssoc = findBufferSensorAssoc( c, ID );
                 if ( sAssoc != NULL ) {
@@ -336,7 +359,20 @@ static bool genericIsAvailable( controllore_t *c, entity_type_t type, const char
         }
         case ENTITY_ISP: {
             isp_t *i = cell_getISP( c->cell, ID );
-            return ( i != NULL ) && !isp_isBusy( i );
+            qualitaSensorAssoc_t *qAssoc;
+
+            if ( i == NULL || isp_isBusy( i ) ) {
+                return false;
+            }
+            /* Guasto = stazione indisponibile (vedi processISP): una ISP
+             * fisicamente libera ma con il sensore di qualita' guasto
+             * ADESSO non deve accettare nuovi pezzi, esattamente come una
+             * macchina rotta - vedi doc in cima a processISP. */
+            qAssoc = findQualitaSensorAssoc( c, ID );
+            if ( qAssoc != NULL && qAssoc->guasto.is_malfunzionante ) {
+                return false;
+            }
+            return true;
         }
         case ENTITY_NASTRO: {
             nastro_t *n = cell_getNastro( c->cell, ID );
@@ -499,6 +535,65 @@ static void retryPending( controllore_t *c, int step )
 }
 
 /**
+ * @brief Scandisce la coda di arrivi ESTERNI schedulati (vedi
+ *        controllore_schedulaArrivo) e ammette nel buffer di ingresso
+ *        ogni oggetto il cui arrival_step e' arrivato ADESSO o e' gia'
+ *        passato (arrival_step <= step): non solo "== step", altrimenti
+ *        un arrivo mancato per un singolo passo (es. simulazione fatta
+ *        partire da uno step > 0) resterebbe bloccato per sempre.
+ *
+ * Se il buffer di ingresso e' pieno al momento giusto, l'oggetto resta
+ * in coda e viene ritentato al passo successivo (stesso principio della
+ * coda "pending" per gli instradamenti interni) - non viene mai perso
+ * ne' saltato.
+ */
+static void retryArriviSchedulati( controllore_t *c, int step )
+{
+    arrivoSchedulato_t *cur;
+    arrivoSchedulato_t *prev;
+    arrivoSchedulato_t *next;
+
+    prev = NULL;
+    cur = c->arriviSchedulati;
+    while ( cur != NULL ) {
+        next = cur->next;
+
+        if ( cur->arrival_step > step ) {
+            /* Non ancora il suo turno: lascialo in coda, passa al prossimo. */
+            prev = cur;
+            cur = next;
+            continue;
+        }
+
+        if ( controllore_ammettiArrivo( c, cur->bufferID, cur->obj, step ) == OP_SUCCESS ) {
+            if ( c->log != NULL ) {
+                log_evento( c->log, step, LOG_INFO, "Arrivo schedulato: %s ammesso in %s (arrival_step=%d)",
+                            object_getID( cur->obj ), cur->bufferID, cur->arrival_step );
+            }
+            /* Sensore di presenza (sez. 5.1): stesso schema di
+             * genera_arrivi_esempio in main.c - fronte di salita seguito
+             * subito da fronte di discesa, per segnalare un arrivo
+             * puntuale. Nessun controllo sul valore di ritorno: se
+             * nessun sensore di presenza e' agganciato a questo buffer,
+             * la chiamata e' semplicemente un no-op innocuo
+             * (ERR_NOT_FOUND, mai un errore bloccante). */
+            controllore_segnalaArrivo( c, cur->bufferID, 0, 1 );
+            controllore_segnalaArrivo( c, cur->bufferID, 0, 0 );
+
+            if ( prev == NULL ) { c->arriviSchedulati = next; } else { prev->next = next; }
+            free( cur );
+        } else {
+            /* Buffer pieno adesso: riprova al prossimo passo, l'oggetto
+             * resta in coda (non liberato: e' ancora "vivo", solo non
+             * ancora entrato nella cella). */
+            prev = cur;
+        }
+
+        cur = next;
+    }
+}
+
+/**
  * @brief Instrada un oggetto appena rilasciato da fromID verso l'uscita
  *        di indice outIndex. Se dev != NULL, prima comanda il Deviatore
  *        verso outIndex e aspetta che sia in posizione. Se l'uscita non
@@ -554,6 +649,31 @@ static short int routeObject( controllore_t *c, entity_type_t fromType, const ch
 /*  ELABORAZIONE PER TIPO DI ENTITÀ                                     */
 /* ------------------------------------------------------------------ */
 
+/**
+ * @brief Aggiorna lo stato guasto/OK di TUTTI i sensori di qualita'
+ *        agganciati, ad OGNI passo - indipendentemente dal fatto che la
+ *        relativa ISP abbia o meno un oggetto in controllo in questo
+ *        momento.
+ *
+ * Prima di questa funzione, update_status veniva chiamato SOLO da
+ * get_qualita, che a sua volta viene chiamato SOLO quando un oggetto e'
+ * presente (oggetto_presente=true, vedi get_qualita in S_Qualita.h): il
+ * timer del guasto restava quindi congelato ogni volta che la ISP era
+ * vuota, invece di continuare a scorrere. Con la nuova regola "guasto =
+ * stazione indisponibile" (vedi genericIsAvailable/processISP sotto), il
+ * timer deve avanzare SEMPRE, altrimenti una ISP che diventa libera
+ * proprio mentre e' guasta smetterebbe di "scontare" il guasto finche'
+ * non le arriva un nuovo pezzo da controllare - comportamento scorretto:
+ * il guasto e' un evento del sensore, non dell'oggetto.
+ */
+static void aggiornaSensoriQualita( controllore_t *c, int step )
+{
+    qualitaSensorAssoc_t *cur;
+    for ( cur = c->sensoriQualita; cur != NULL; cur = cur->next ) {
+        update_status( &cur->sensore, &cur->guasto, step );
+    }
+}
+
 static void processISP( controllore_t *c, const char *ID, int step )
 {
     isp_t *i;
@@ -568,6 +688,21 @@ static void processISP( controllore_t *c, const char *ID, int step )
     if ( i == NULL || !isp_isReady( i, step ) ) {
         return;
     }
+
+    /* Guasto = stazione indisponibile (decisione del gruppo, sez. 5 della
+     * traccia: "il guasto puo' riguardare... una stazione"): se il
+     * sensore di qualita' agganciato a questa ISP e' ATTUALMENTE in
+     * malfunzionamento, la ISP TRATTIENE il pezzo che sta controllando
+     * anche se il tempo di controllo e' scaduto (isp_isReady sopra e'
+     * gia' vero) - non lo rilascia finche' il guasto non rientra. Va
+     * controllato PRIMA di isp_tryRelease, altrimenti il pezzo verrebbe
+     * comunque rilasciato con un esito calcolato durante il guasto. */
+    qAssoc = findQualitaSensorAssoc( c, ID );
+    if ( qAssoc != NULL && qAssoc->guasto.is_malfunzionante ) {
+        qAssoc->step_bloccata_per_guasto++;
+        return;
+    }
+
     if ( !puoRilasciare( c, ENTITY_ISP, ID ) ) {
         /* Contropressione visibile: la destinazione (unica uscita, senza
          * Deviatore) e' piena/occupata ADESSO. Non rilasciamo: la ISP
@@ -584,7 +719,6 @@ static void processISP( controllore_t *c, const char *ID, int step )
         return;
     }
 
-    qAssoc = findQualitaSensorAssoc( c, ID );
     if ( qAssoc != NULL ) {
         int esitoGrezzo = get_qualita( &qAssoc->sensore, &qAssoc->guasto, step, obj, true );
         /* get_qualita puo' restituire un codice ERR_* (negativo) solo in
@@ -608,10 +742,13 @@ static void processISP( controllore_t *c, const char *ID, int step )
     /* L'indice di uscita corrisponde di norma all'esito (convenzione in
      * cell.h: CONFORME=0, RIVALUTAZIONE=1, SCARTO=2). Con 4 uscite
      * collegate (layout con doppio esito "conforme", uno per materiale:
-     * es. Alacciaio/Blrame), l'esito CONFORME da solo non basta a
-     * scegliere tra le due: usiamo object->type per decidere tra
-     * l'indice 0 (materiale 'A') e l'ultimo indice, 3 (materiale 'B'/
-     * qualunque altro), lasciando RIVALUTAZIONE=1 e SCARTO=2 invariati. */
+     * es. Alacciaio/rame), l'esito CONFORME da solo non basta a
+     * scegliere tra le due: si usa get_Material (sotto) per decidere
+     * tra l'indice 0 (materiale 'A') e l'ultimo indice, 3 (materiale
+     * 'B'); se get_Material non riesce a classificarlo (dimensioni
+     * reali fuori tolleranza per il tipo dichiarato), l'indice diventa
+     * 1 (RIVALUTAZIONE/B_riqualifica) invece di indovinare comunque tra
+     * le due uscite "conforme" - vedi sotto. */
     outCount = genericOutputCount( c, ENTITY_ISP, ID );
     outIndex = (int) esito;
 
@@ -647,11 +784,19 @@ static void processISP( controllore_t *c, const char *ID, int step )
              * (materiale 'B'). */
             if ( materiale != 'A' && materiale != 'B' ) {
                 /* get_Material non ha riconosciuto il materiale entro
-                 * tolleranza per nessuna delle due densita': usiamo
-                 * object->type come ripiego, per non perdere l'oggetto. */
-                materiale = object_getType( obj );
+                 * tolleranza per nessuna delle due densita': le
+                 * dimensioni reali del pezzo non corrispondono al
+                 * target per il proprio tipo dichiarato, quindi merita
+                 * una verifica ulteriore invece di proseguire come se
+                 * fosse regolare (decisione del gruppo: instradare in
+                 * RIVALUTAZIONE/B_riqualifica, indice 1, invece di
+                 * indovinare comunque tra le due uscite "conforme" in
+                 * base al tipo dichiarato - vedi discussione nel
+                 * README). */
+                outIndex = (int) RIVALUTAZIONE;
+            } else {
+                outIndex = ( materiale == 'B' ) ? 3 : 0;
             }
-            outIndex = ( materiale == 'B' ) ? 3 : 0;
         }
     }
 
@@ -778,7 +923,11 @@ static void processBuffer( controllore_t *c, const char *ID, int step )
         return;
     }
 
-    if ( destType == ENTITY_MACHINE ) {
+    /* Ammissione "buffer-aware" (soglia sul buffer a valle di una
+     * macchina): fa parte solo della Strategia 1 (sez. 4.1 del progetto
+     * preliminare, tabella "Alternative considerate" - la Strategia 2/
+     * FCFS non guarda mai l'occupazione dei buffer, per costruzione). */
+    if ( destType == ENTITY_MACHINE && c->strategia == STRATEGIA_PRIORITA_BUFFER_AWARE ) {
         machine_t *m = cell_getMachine( c->cell, destID );
         char mOutID[IDLENGTH];
         entity_type_t mOutType;
@@ -801,8 +950,12 @@ static void processBuffer( controllore_t *c, const char *ID, int step )
     }
 
     /* Un solo oggetto per volta puo' essere prelevato da una risorsa
-     * (sez. 2.2 del progetto): preleva quello a priorita' piu' alta. */
-    obj = buffer_removeObject( b, true );
+     * (sez. 2.2 del progetto): preleva quello a priorita' piu' alta
+     * (Strategia 1) oppure quello arrivato per primo (Strategia 2/FCFS -
+     * vedi strategia_controllo_t in Controllore.h e buffer_removeObject
+     * in buffer.h, che con priority=false rimuove semplicemente dalla
+     * testa della lista). */
+    obj = buffer_removeObject( b, c->strategia == STRATEGIA_PRIORITA_BUFFER_AWARE );
     if ( obj == NULL ) {
         return;
     }
@@ -900,7 +1053,9 @@ controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int
 
     c->cell = cell;
     c->soglia_buffer = soglia_buffer;
+    c->strategia = STRATEGIA_PRIORITA_BUFFER_AWARE;   /* default: Strategia 1, comportamento invariato */
     c->pending = NULL;
+    c->arriviSchedulati = NULL;
     c->motori = NULL;
     c->deviatori = NULL;
     c->sensoriBuffer = NULL;
@@ -919,9 +1074,27 @@ controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int
     return c;
 }
 
+short int controllore_impostaStrategia( controllore_t *c, strategia_controllo_t strategia )
+{
+    if ( c == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    c->strategia = strategia;
+    return OP_SUCCESS;
+}
+
+strategia_controllo_t controllore_getStrategia( const controllore_t *c )
+{
+    if ( c == NULL ) {
+        return STRATEGIA_PRIORITA_BUFFER_AWARE;
+    }
+    return c->strategia;
+}
+
 void controllore_destroy( controllore_t *c )
 {
     pendingNode_t *pCur, *pNext;
+    arrivoSchedulato_t *aCur, *aNext;
     motoreAssoc_t *mCur, *mNext;
     deviatoreAssoc_t *dCur, *dNext;
     bufferSensorAssoc_t *bCur, *bNext;
@@ -947,6 +1120,16 @@ void controllore_destroy( controllore_t *c )
         pNext = pCur->next;
         object_delete( pCur->obj );
         free( pCur );
+    }
+    /* Stesso motivo della coda pending sopra: gli arrivi schedulati mai
+     * raggiunti (simulazione terminata prima del loro ARRIVAL_STEP, o
+     * mai riusciti ad entrare perche' il buffer di ingresso e' rimasto
+     * pieno) restano privati di questo file - va liberato qui l'object_t
+     * associato, altrimenti leak. */
+    for ( aCur = c->arriviSchedulati; aCur != NULL; aCur = aNext ) {
+        aNext = aCur->next;
+        object_delete( aCur->obj );
+        free( aCur );
     }
     for ( mCur = c->motori; mCur != NULL; mCur = mNext ) { mNext = mCur->next; free( mCur ); }
     for ( dCur = c->deviatori; dCur != NULL; dCur = dNext ) { dNext = dCur->next; free( dCur ); }
@@ -1111,6 +1294,7 @@ short int controllore_collegaSensoreQualita( controllore_t *c, const char *ispID
         free( node );
         return err;
     }
+    node->step_bloccata_per_guasto = 0;
 
     node->next = c->sensoriQualita;
     c->sensoriQualita = node;
@@ -1161,6 +1345,21 @@ short int controllore_step( controllore_t *c, int step_corrente )
 
     /* 1. Sblocca prima gli oggetti rimasti in attesa dal passo precedente. */
     retryPending( c, step_corrente );
+
+    /* 1ter. Ammette gli arrivi ESTERNI schedulati il cui turno e' arrivato
+     * (vedi controllore_schedulaArrivo/parser_caricaOggetti): fatto qui,
+     * PRIMA della scansione di ISP/macchine/nastri sotto, cosi' un
+     * oggetto appena entrato in un buffer di ingresso puo' gia' essere
+     * processato nello stesso passo in cui e' arrivato, invece di dover
+     * aspettare il passo successivo. */
+    retryArriviSchedulati( c, step_corrente );
+
+    /* 1bis. Aggiorna lo stato guasto/OK di ogni sensore di qualita' PRIMA
+     * di qualunque decisione di ammissione/rilascio di questo passo (vedi
+     * doc di aggiornaSensoriQualita): sia genericIsAvailable (ammissione)
+     * sia processISP (rilascio) leggono is_malfunzionante piu' sotto, e
+     * devono vedere lo stato aggiornato ad ADESSO, non a due passi fa. */
+    aggiornaSensoriQualita( c, step_corrente );
 
     /* 2. ISP pronte: calcola l'esito e instrada (eventualmente via Deviatore). */
     n = cell_getISPCount( c->cell );
@@ -1323,6 +1522,20 @@ long controllore_getAnomalieQualita( const controllore_t *c, const char *ispID )
     return get_anomalie_rilevate( &qAssoc->sensore );
 }
 
+long controllore_getStepBloccoGuasto( const controllore_t *c, const char *ispID )
+{
+    qualitaSensorAssoc_t *qAssoc;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    qAssoc = findQualitaSensorAssoc( (controllore_t *) c, ispID );
+    if ( qAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return qAssoc->step_bloccata_per_guasto;
+}
+
 short int controllore_getTipoLettureQualita( const controllore_t *c, const char *ispID, long out[3] )
 {
     qualitaSensorAssoc_t *qAssoc;
@@ -1364,6 +1577,20 @@ long controllore_getMaterialeB( const controllore_t *c, const char *ispID )
         return ERR_NOT_FOUND;
     }
     return get_ConteggioMaterialeB( &qAssoc->sensore );
+}
+
+long controllore_getMaterialeNonClassificato( const controllore_t *c, const char *ispID )
+{
+    qualitaSensorAssoc_t *qAssoc;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    qAssoc = findQualitaSensorAssoc( (controllore_t *) c, ispID );
+    if ( qAssoc == NULL ) {
+        return ERR_NOT_FOUND;
+    }
+    return get_ConteggioNonClassificato( &qAssoc->sensore );
 }
 
 long controllore_getLetturePresenza( const controllore_t *c, const char *ID )
@@ -1423,6 +1650,38 @@ short int controllore_ammettiArrivo( controllore_t *c, const char *bufferID, obj
     return genericInsert( c, ENTITY_BUFFER, bufferID, obj, step );
 }
 
+short int controllore_schedulaArrivo( controllore_t *c, const char *bufferID, object_t *obj, int arrival_step )
+{
+    arrivoSchedulato_t *node;
+
+    if ( c == NULL || bufferID == NULL || obj == NULL ) {
+        return ERR_NULL_PTR;
+    }
+    if ( strlen( bufferID ) >= IDLENGTH ) {
+        return ERR_ID_INVALID;
+    }
+
+    node = malloc( sizeof( arrivoSchedulato_t ) );
+    if ( node == NULL ) {
+        return ERR_ALLOC;
+    }
+
+    node->obj = obj;
+    strncpy( node->bufferID, bufferID, IDLENGTH - 1 );
+    node->bufferID[IDLENGTH - 1] = '\0';
+    node->arrival_step = arrival_step;
+
+    /* In testa, come le altre code interne (pending, sensoriQualita,
+     * ecc.): l'ordine di ammissione non dipende dall'ordine con cui
+     * queste entrate sono state schedulate, ma da arrival_step (vedi
+     * retryArriviSchedulati, che scandisce l'intera lista ogni passo),
+     * quindi non serve mantenerla ordinata. */
+    node->next = c->arriviSchedulati;
+    c->arriviSchedulati = node;
+
+    return OP_SUCCESS;
+}
+
 long controllore_getCompletati( const controllore_t *c )
 {
     if ( c == NULL ) {
@@ -1442,6 +1701,23 @@ int controllore_getPendingCount( const controllore_t *c )
 
     count = 0;
     for ( cur = c->pending; cur != NULL; cur = cur->next ) {
+        count++;
+    }
+
+    return count;
+}
+
+int controllore_getArriviSchedulatiCount( const controllore_t *c )
+{
+    arrivoSchedulato_t *cur;
+    int count;
+
+    if ( c == NULL ) {
+        return ERR_NULL_PTR;
+    }
+
+    count = 0;
+    for ( cur = c->arriviSchedulati; cur != NULL; cur = cur->next ) {
         count++;
     }
 

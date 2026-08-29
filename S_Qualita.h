@@ -27,6 +27,7 @@ typedef struct {
     long letture_totali;
     long A;
     long B;
+    long non_classificato;           /* get_Material chiamata ma ne' A ne' B entro tolleranza (vedi get_Material) */
     long type_letture_totali[3];     /* conteggio letture per CONFORME/RIVALUTAZIONE/SCARTO */
     long anomalie_rilevate;          /* letture avvenute durante un malfunzionamento (sez. 2.1) */
 } SensoreQualita;
@@ -81,6 +82,15 @@ long get_anomalie_rilevate(const SensoreQualita *s);
  * materiale 'A' (rispettivamente 'B') entro tolleranza. */
 long get_ConteggioMaterialeA(const SensoreQualita *s);
 long get_ConteggioMaterialeB(const SensoreQualita *s);
+
+/* Conteggio di quante volte get_Material e' stata chiamata ma NON ha
+ * riconosciuto il pezzo entro tolleranza ne' come 'A' ne' come 'B' (vedi
+ * get_Material: ritorna 0 in questo caso, invece di 'A'/'B'). Utile per
+ * accorgersi se object->dimensionX/raggio si discostano troppo dal
+ * target configurato per QUALSIASI materiale noto - senza questo
+ * contatore quei casi restavano invisibili (get_Material tornava 0 e
+ * nessuno lo contava da nessuna parte). */
+long get_ConteggioNonClassificato(const SensoreQualita *s);
 
 /* Determina l'indice di materiale (0,1,2) usato per selezionare la
  * soglia target[] corretta. */
