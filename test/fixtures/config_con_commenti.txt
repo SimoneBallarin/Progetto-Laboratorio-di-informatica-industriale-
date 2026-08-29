@@ -1,0 +1,6 @@
+# Questo e' un commento a inizio file
+BUFFER,ID=B1,CAPACITY=10
+# Un altro commento in mezzo
+BUFFER,ID=B2,CAPACITY=20
+   # Commento con spazi iniziali
+SIM_STEPS=42
