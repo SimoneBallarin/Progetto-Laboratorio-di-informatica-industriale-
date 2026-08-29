@@ -25,7 +25,9 @@ int sensore_qualita_init(SensoreQualita *s, const char *ID,
     s->raggio_target = raggio_target;
     s->A = 0;
     s->B = 0;
-
+    s->non_classificato = 0;
+    for(int i =0 ; i<3; i++){s->type_letture_totali[i] = 0;}
+    
     m->last_lettura = 0;
     m->time_since_last_change = 0;
     m->is_malfunzionante = false;
@@ -81,18 +83,51 @@ int get_status_qualita(const SensoreQualita *s)
 char get_Material(object_t *object, SensoreQualita *s)
 {
     if (s == NULL || object == NULL) return ERR_NULL_PTR;
-    
+
     float densita[2] = {8.96 , 7.85};
     float ConfrontoA = (float)(((object -> dimensionX)*(object -> raggio)*(object -> raggio))*3.14 * densita[0]);
     float ConfrontoB = (float)(((object -> dimensionX)*(object -> raggio)*(object -> raggio))*3.14 * densita[1]);
-    float materiale;
-    float e;
     int p=12;
-    if (object -> type == 'A') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[0]); e = materiale*p/100;}
-    if (object -> type == 'B') {materiale = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[1]); e = materiale*p/100;}
-    if((materiale - e)<= ConfrontoA && ConfrontoA <= (materiale + e)){ s->A++; return 'A';}
-    else if((materiale - e)<= ConfrontoB && ConfrontoB <= (materiale + e)){ s->B++; return 'B';}
-    else {return 0;}
+
+    /* Bug corretto: la versione precedente calcolava "materiale"/"e"
+     * UNA SOLA VOLTA in base a object->type, poi li riusava per
+     * confrontare ANCHE ConfrontoB (calcolato con la densita' opposta) -
+     * un oggetto dichiarato 'A' con dimensioni fuori dalla tolleranza
+     * "A" poteva quindi finire classificato 'B' per puro caso numerico,
+     * ed essere instradato nel buffer del materiale OPPOSTO a quello
+     * dichiarato (vedi README). Non basta ricalcolare "materiale"/"e"
+     * separatamente per A e per B: essendo la tolleranza una PERCENTUALE
+     * della massa di riferimento, la densita' si semplifica sempre
+     * nel confronto (materiale_X ± e_X, diviso per densita[X], da'
+     * sempre lo stesso intervallo [volume_target*0.88, volume_target*1.12]
+     * indipendentemente da quale densita' X si usi) - un vero confronto
+     * incrociato "con densita' corretta" darebbe quindi SEMPRE lo stesso
+     * esito del confronto primario, non avrebbe alcun valore
+     * discriminante. L'unico confronto che ha senso e' quindi UNO SOLO,
+     * quello coerente con il tipo dichiarato: se le dimensioni non sono
+     * abbastanza vicine al target per quel tipo, il pezzo e'
+     * "non_classificato" (non un secondo tentativo con l'altro
+     * materiale). */
+    if (object -> type == 'A') {
+        float materialeA = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[0]);
+        float eA = materialeA*p/100;
+        if ((materialeA - eA) <= ConfrontoA && ConfrontoA <= (materialeA + eA)) { s->A++; return 'A'; }
+        s->non_classificato++;
+        return 0;
+    }
+    if (object -> type == 'B') {
+        float materialeB = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[1]);
+        float eB = materialeB*p/100;
+        if ((materialeB - eB) <= ConfrontoB && ConfrontoB <= (materialeB + eB)) { s->B++; return 'B'; }
+        s->non_classificato++;
+        return 0;
+    }
+
+    /* Tipo sconosciuto (ne' 'A' ne' 'B'): non classificabile per
+     * costruzione, nessun confronto da fare (vedi anche il commento nel
+     * .h su questo caso, aggiunto insieme al contatore non_classificato). */
+    s->non_classificato++;
+    return 0;
 }
 
 int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
@@ -107,6 +142,23 @@ int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
 
     update_status(s, m, time_current);
 
+    /* Questo ramo si attiva SOLO se get_qualita viene chiamata mentre
+     * s->status e' QUALITA_NOT_OK (cioe' il sensore E' in guasto in
+     * questo preciso istante). Con l'architettura attuale del progetto
+     * questo non succede mai in pratica: Controllore.c (processISP)
+     * controlla is_malfunzionante PRIMA di chiamare get_qualita, e se e'
+     * vero esce subito senza mai raggiungere questa funzione - vedi
+     * README, sezione "Guasto sensore qualita' = stazione
+     * indisponibile" (decisione del gruppo: durante il guasto la
+     * stazione TRATTIENE il pezzo invece di produrre una lettura
+     * incerta). Questo ramo resterebbe pero' l'unico a proteggere la
+     * correttezza se in futuro qualcuno chiamasse get_qualita
+     * direttamente durante un guasto, bypassando quel controllo a monte
+     * (es. un nuovo punto di chiamata, o un test che esercita questa
+     * funzione in isolamento) - senza, il codice sotto leggerebbe le
+     * dimensioni dell'oggetto come se il sensore funzionasse
+     * normalmente, producendo una lettura silenziosamente inaffidabile
+     * invece di segnalare esplicitamente l'incertezza. */
     if (s->status != QUALITA_OK) {
         s->risultato_ultima_lettura = RIVALUTAZIONE;
         s->type_letture_totali[s->risultato_ultima_lettura]++;
@@ -182,6 +234,12 @@ long get_ConteggioMaterialeB(const SensoreQualita *s)
 {
     if (s == NULL) return ERR_NULL_PTR;
     return s->B;
+}
+
+long get_ConteggioNonClassificato(const SensoreQualita *s)
+{
+    if (s == NULL) return ERR_NULL_PTR;
+    return s->non_classificato;
 }
 
 

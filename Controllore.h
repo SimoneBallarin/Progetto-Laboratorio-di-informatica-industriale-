@@ -64,6 +64,68 @@
 typedef struct controllore controllore_t;
 
 /**
+ * @brief Strategia di controllo usata da processBuffer per scegliere
+ *        l'oggetto da prelevare da un buffer e per decidere se ritardare
+ *        l'ammissione in base all'occupazione del buffer a valle (sez.
+ *        4.1 del progetto preliminare, tabella "Alternative considerate").
+ *
+ * STRATEGIA_PRIORITA_BUFFER_AWARE ("Strategia 1", DEFAULT, comportamento
+ * identico alle versioni precedenti di questo file):
+ *   - Inserimento nei buffer e prelievo da un buffer ordinati per
+ *     priorità decrescente (buffer_insertObject/buffer_removeObject con
+ *     priority=true): a parità di condizioni, l'oggetto a priorità più
+ *     alta viene sempre servito per primo, indipendentemente da quando è
+ *     arrivato.
+ *   - Ammissione "buffer-aware": se la destinazione è una macchina il cui
+ *     buffer a valle ha superato la soglia c->soglia_buffer, l'ammissione
+ *     viene ritardata di un passo (vedi processBuffer).
+ *
+ * STRATEGIA_FCFS ("Strategia 2", First-Come-First-Served):
+ *   - Inserimento ordinato per arrivo e prelievo dalla testa della coda
+ *     (buffer_insertObject/buffer_removeObject con priority=false): gli
+ *     oggetti sono serviti nello stesso ordine in cui sono arrivati,
+ *     ignorando completamente il campo priorità.
+ *   - Nessun controllo di soglia sul buffer a valle: l'ammissione avviene
+ *     appena la destinazione è libera, senza guardare l'occupazione dei
+ *     buffer (vedi tabella 4.1: "nessuna garanzia su priorità o buffer").
+ *
+ * Impostata da controllore_create (default STRATEGIA_PRIORITA_BUFFER_AWARE,
+ * per non cambiare il comportamento di codice esistente) e modificabile in
+ * qualsiasi momento con controllore_impostaStrategia — tipicamente PRIMA
+ * di avviare il ciclo di simulazione, per confrontare due esecuzioni sullo
+ * stesso scenario con strategie diverse (sez. "confronto tra strategie").
+ */
+typedef enum {
+    STRATEGIA_PRIORITA_BUFFER_AWARE = 0,   /**< Strategia 1 (default). */
+    STRATEGIA_FCFS = 1                     /**< Strategia 2. */
+} strategia_controllo_t;
+
+/**
+ * @brief Cambia la strategia di controllo usata da controllore_step per
+ *        tutti i buffer della cella (vedi strategia_controllo_t).
+ *
+ * Può essere chiamata anche a controllore già creato e in uso: il
+ * cambio si applica dal PROSSIMO controllore_step in poi (non riordina
+ * retroattivamente gli oggetti già presenti nei buffer, che restano
+ * nell'ordine in cui erano stati inseriti finora - per un confronto
+ * pulito tra strategie, impostarla prima di inserire il primo oggetto).
+ * @param c Puntatore al controllore.
+ * @param strategia La nuova strategia da usare.
+ * @return OP_SUCCESS, o ERR_NULL_PTR se c è NULL.
+ */
+short int controllore_impostaStrategia( controllore_t *c, strategia_controllo_t strategia );
+
+/**
+ * @brief Strategia di controllo attualmente in uso (vedi
+ *        controllore_impostaStrategia).
+ * @param c Puntatore al controllore.
+ * @return La strategia corrente, o STRATEGIA_PRIORITA_BUFFER_AWARE se
+ *         c è NULL (valore di default, per sicurezza in contesti dove
+ *         l'errore non può essere propagato con un codice ERR_*).
+ */
+strategia_controllo_t controllore_getStrategia( const controllore_t *c );
+
+/**
  * @brief Crea un controllore agganciato a una cella già costruita.
  *
  * Il controllore NON diventa proprietario della cella: cell_destroy va
@@ -310,9 +372,29 @@ long controllore_getLettureQualita( const controllore_t *c, const char *ispID );
 /**
  * @brief Anomalie rilevate dal sensore di qualità agganciato a un'ISP
  *        (letture avvenute durante un malfunzionamento simulato, vedi
- *        controllore_impostaGuastoQualita).
+ *        controllore_impostaGuastoQualita). Con la regola attuale
+ *        "guasto = stazione indisponibile" (vedi processISP in
+ *        Controllore.c) questo contatore resta quasi sempre a 0: durante
+ *        il guasto la ISP non produce più letture (le trattiene), non ne
+ *        produce di sbagliate. Per osservare l'effetto del guasto usare
+ *        controllore_getStepBloccoGuasto.
  */
 long controllore_getAnomalieQualita( const controllore_t *c, const char *ispID );
+
+/**
+ * @brief Numero di passi di simulazione in cui questa ISP era pronta a
+ *        rilasciare un pezzo (tempo di controllo scaduto) ma lo ha
+ *        TRATTENUTO perché il sensore di qualità era in quel momento
+ *        guasto (vedi processISP/genericIsAvailable in Controllore.c:
+ *        durante il guasto la ISP non accetta nuovi pezzi e non rilascia
+ *        quello che ha in controllo, "stazione indisponibile" invece di
+ *        "lettura sbagliata").
+ * @param c Puntatore al controllore.
+ * @param ispID ID dell'ISP.
+ * @return Il conteggio, oppure ERR_NULL_PTR/ERR_NOT_FOUND (vedi
+ *         errors.h) se nessun sensore di qualità è agganciato a ispID.
+ */
+long controllore_getStepBloccoGuasto( const controllore_t *c, const char *ispID );
 
 /**
  * @brief Copia in out[3] i conteggi CONFORME/RIVALUTAZIONE/SCARTO del
@@ -338,6 +420,19 @@ short int controllore_getTipoLettureQualita( const controllore_t *c, const char 
  */
 long controllore_getMaterialeA( const controllore_t *c, const char *ispID );
 long controllore_getMaterialeB( const controllore_t *c, const char *ispID );
+
+/**
+ * @brief Numero di volte in cui get_Material e' stata chiamata per
+ *        questa ISP ma NON ha riconosciuto il pezzo entro tolleranza
+ *        ne' come materiale A ne' come B (vedi S_Qualita.h). Prima
+ *        dell'introduzione di questo contatore, questi casi restavano
+ *        invisibili: get_Material restituiva 0 ma nessuno lo contava.
+ *        Un valore alto segnala pezzi le cui dimensioni si discostano
+ *        troppo dal target configurato per ENTRAMBI i materiali noti
+ *        (o, se il file oggetti in ingresso permette tipi diversi da
+ *        'A'/'B', un tipo non gestito da get_Material).
+ */
+long controllore_getMaterialeNonClassificato( const controllore_t *c, const char *ispID );
 
 /**
  * @brief Letture totali del sensore di presenza agganciato a un ID
@@ -398,6 +493,43 @@ int controllore_segnalaArrivo( controllore_t *c, const char *bufferIngressoID, i
 short int controllore_ammettiArrivo( controllore_t *c, const char *bufferID, object_t *obj, int step );
 
 /**
+ * @brief Schedula l'ammissione di un oggetto in un buffer di ingresso
+ *        per uno step FUTURO (o passato/corrente: vedi sotto), invece di
+ *        inserirlo subito - pensata per gli arrivi letti da un file
+ *        oggetti (vedi parser_caricaOggetti in parser.c), dove ogni riga
+ *        ha un proprio ARRIVAL_STEP diverso, a differenza del backlog di
+ *        prova generato in main.c (che inserisce tutto allo step 0).
+ *
+ * L'oggetto NON entra subito nella cella: resta in una coda interna del
+ * controllore finche' controllore_step non raggiunge arrival_step, poi
+ * viene ammesso automaticamente con lo stesso percorso di
+ * controllore_ammettiArrivo (SensoreBuffer aggiornato correttamente). Se
+ * il buffer e' pieno esattamente ad arrival_step, l'ammissione viene
+ * ritentata ai passi successivi finche' non trova posto - non viene mai
+ * perso ne' saltato. Se arrival_step e' <= allo step corrente al momento
+ * della chiamata (arrivo "nel passato" o "adesso"), verra' ammesso al
+ * PROSSIMO controllore_step (non immediatamente da questa funzione).
+ *
+ * L'object_t passato diventa di proprieta' del controllore: se la
+ * simulazione termina prima che l'oggetto riesca ad essere ammesso (mai
+ * raggiunto il suo arrival_step, o buffer sempre pieno), viene liberato
+ * automaticamente da controllore_destroy - non liberarlo separatamente.
+ *
+ * @param c Puntatore al controllore.
+ * @param bufferID ID del buffer di ingresso (deve già esistere nella
+ *        cella al momento in cui arrival_step viene raggiunto, non
+ *        necessariamente ora).
+ * @param obj Puntatore all'oggetto da schedulare (proprietà trasferita
+ *        al controllore, vedi sopra).
+ * @param arrival_step Step di simulazione da cui l'oggetto diventa
+ *        ammissibile.
+ * @return OP_SUCCESS se schedulato, ERR_NULL_PTR se c/bufferID/obj sono
+ *         NULL, ERR_ID_INVALID se bufferID è troppo lungo, ERR_ALLOC se
+ *         la malloc interna fallisce.
+ */
+short int controllore_schedulaArrivo( controllore_t *c, const char *bufferID, object_t *obj, int arrival_step );
+
+/**
  * @brief Numero di oggetti usciti dalla linea (arrivati a un'entità
  *        senza nessuna uscita collegata) da quando il controllore esiste.
  * @param c Puntatore al controllore.
@@ -413,6 +545,16 @@ long controllore_getCompletati( const controllore_t *c );
  * @return Numero di oggetti in coda, oppure ERR_NULL_PTR se c è NULL.
  */
 int controllore_getPendingCount( const controllore_t *c );
+
+/**
+ * @brief Numero di arrivi ESTERNI ancora schedulati (vedi
+ *        controllore_schedulaArrivo): oggetti letti da un file oggetti
+ *        il cui ARRIVAL_STEP non è ancora stato raggiunto, o è stato
+ *        raggiunto ma il buffer di ingresso era pieno.
+ * @param c Puntatore al controllore.
+ * @return Numero di arrivi ancora in coda, oppure ERR_NULL_PTR se c è NULL.
+ */
+int controllore_getArriviSchedulatiCount( const controllore_t *c );
 
 /**
  * @brief Stampa lo stato della cella orchestrata e le statistiche del

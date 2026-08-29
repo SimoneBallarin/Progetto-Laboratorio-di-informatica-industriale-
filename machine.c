@@ -11,7 +11,7 @@
 
 /* Tolleranza di default (11%), usata da machine_create se non
  * sovrascritta con machine_setTolleranzaLavorazione. */
-#define TOLLERANZA_LAVORAZIONE_DEFAULT 0.05
+#define TOLLERANZA_LAVORAZIONE_DEFAULT 0.02
 
 machine_t *machine_create( const char *ID, int tempo_lavorazione, short int *errCode )
 {
@@ -250,8 +250,8 @@ static double fattore_rumore( double tolleranza )
         return 0.0;
     }
 
-    if(r==5){return tolleranza*2;}
-    if(r==6){return -tolleranza*2;}
+    if(r==5){return tolleranza*5;}
+    if(r==6){return -tolleranza*5;}
     else{return tolleranza*(rand()%3-1);}
     
     

@@ -140,11 +140,11 @@ short int statistiche_registraBlocco( statistiche_t *s, const char *bufferID );
 /**
  * @brief Registra il completamento di un oggetto (arrivato in un
  *        buffer terminale, cioè object_getStepOut(obj) != STEP_OUT_NONE)
- *        per le statistiche di tempo di attraversamento e "% entro
- *        scadenza" per classe di priorità (statistiche #2, #3, #4). Va
- *        chiamata una volta per ogni oggetto arrivato, tipicamente
- *        scorrendo i buffer terminali a fine simulazione (vedi
- *        bufferObj_t in buffer.h: buffer->head, ->dato, ->next).
+ *        per le statistiche di tempo in sistema e "% entro scadenza" per
+ *        classe di priorità (statistiche #2, #3, #4). Va chiamata una
+ *        volta per ogni oggetto arrivato, tipicamente scorrendo i buffer
+ *        terminali a fine simulazione (vedi bufferObj_t in buffer.h:
+ *        buffer->head, ->dato, ->next).
  *
  * Oggetti con stepOut == STEP_OUT_NONE (non ancora arrivati/ancora in
  * coda) vengono ignorati silenziosamente: non chiamare questa funzione
@@ -153,14 +153,17 @@ short int statistiche_registraBlocco( statistiche_t *s, const char *bufferID );
  * buffer terminali senza doverli filtrare prima a mano.
  * @param s Puntatore alla struct.
  * @param obj Puntatore all'oggetto (sola lettura, non modificato).
- * @param scadenza_passi Soglia (in passi di simulazione dalla
- *        creazione) entro cui l'oggetto si considera "completato in
- *        tempo" per la statistica #4. Nessun oggetto nel progetto ha
- *        oggi un concetto di scadenza proprio: è un parametro esterno,
- *        deciso da chi chiama (es. una soglia fissa uguale per tutti,
- *        o calcolata da altrove) - passa un numero <= 0 per disattivare
- *        questa specifica statistica (tutti gli oggetti verranno
- *        contati come "fuori scadenza").
+ * @param scadenza_passi Soglia (in passi di simulazione) usata per DUE
+ *        conteggi separati e indipendenti (statistica #4), per non
+ *        creare ambiguità su cosa significhi "entro scadenza" (vedi
+ *        doc di prioritaStat_t/statistiche_riepilogo_t):
+ *          - tempo SISTEMA (coda di ingresso + pipeline) <= scadenza_passi
+ *          - tempo PROCESSO (solo pipeline, ESCLUSA la coda) <= scadenza_passi
+ *        Nessun oggetto nel progetto ha oggi un concetto di scadenza
+ *        proprio: è un parametro esterno, deciso da chi chiama (es. una
+ *        soglia fissa uguale per tutti, o calcolata da altrove) - passa
+ *        un numero <= 0 per disattivare entrambe le statistiche (tutti
+ *        gli oggetti verranno contati come "fuori scadenza" in entrambe).
  * @return OP_SUCCESS, o ERR_NULL_PTR se s o obj sono NULL.
  */
 short int statistiche_registraCompletamento( statistiche_t *s, const object_t *obj, int scadenza_passi );
@@ -187,5 +190,69 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
  *        scrivibile non deve far perdere anche l'output a schermo).
  */
 void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione, const char *path_output );
+
+/**
+ * @brief Riepilogo aggregato "a una riga per metrica", pensato per un
+ *        confronto affiancato tra due esecuzioni (es. due strategie di
+ *        controllo, o due scenari) - vedi statistiche_getRiepilogo.
+ *
+ * Ogni campo aggrega su TUTTE le entità monitorate (tutti i buffer
+ * dichiarati con statistiche_monitoraBuffer, tutte le priorità, ecc.):
+ * per il dettaglio per singolo buffer/priorità resta statistiche_stampa.
+ *
+ * DUE DEFINIZIONI DI TEMPO, tenute SEMPRE separate per evitare
+ * l'ambiguità che il nome "tempo di attraversamento" causava in
+ * precedenza (il valore era in realtà sempre stato il tempo totale,
+ * coda inclusa) - vedi anche prioritaStat_t in statistiche.c:
+ *   - "sistema"  = tempo TOTALE in sistema (coda di ingresso + pipeline),
+ *     stepOut - stepCreation.
+ *   - "processo" = SOLO la pipeline vera e propria (ISP1->N1->M->B2->ISP2),
+ *     ESCLUSA l'attesa in coda su B1, stepOut - stepPartial.
+ * Entrambe vengono confrontate con la STESSA scadenza (il parametro
+ * scadenza_passi passato a statistiche_registraCompletamento): un
+ * oggetto può quindi risultare "entro scadenza" secondo una definizione
+ * e non secondo l'altra.
+ */
+typedef struct {
+    long   totale_completati;              /**< Somma su tutte le priorità (stat. #2/#3). */
+    double perc_entro_scadenza_tempo_sistema;    /**< % con tempo SISTEMA (coda+processo) <= scadenza. */
+    double tempo_medio_sistema;                   /**< Media pesata di stepOut-stepCreation sui completati. */
+    double perc_entro_scadenza_tempo_processo;   /**< % con tempo PROCESSO (solo pipeline, no coda) <= scadenza. */
+    double tempo_medio_processo;                  /**< Media pesata di stepOut-stepPartial (solo pipeline). */
+    double occupazione_media_buffer;        /**< Media delle medie di occupazione dei buffer monitorati (stat. #6). */
+    int    occupazione_massima_buffer;      /**< Massimo tra i massimi di occupazione dei buffer monitorati (stat. #6). */
+    long   totale_blocchi;                  /**< Blocchi su buffer monitorati + non monitorati (stat. #8). */
+    long   totale_anomalie_qualita;         /**< Somma delle anomalie su tutte le ISP monitorate (stat. #9). */
+    int    pending_finale;                  /**< controllore_getPendingCount a fine simulazione. */
+
+    /* Scomposizione per fascia di priorità (sez. 2.1 del progetto
+     * preliminare: "rispetto delle priorità" come obiettivo separato
+     * dalla fluidità generale) - permette di vedere, in un confronto tra
+     * strategie, l'effetto che le medie aggregate sopra possono
+     * nascondere (in una coda a singolo servitore non preemptive, il
+     * tempo di attesa TOTALE medio è invariante rispetto all'ordine di
+     * servizio: cambia solo CHI aspetta di più, non la media generale).
+     * Basata sul tempo SISTEMA (l'attesa vissuta dall'oggetto), non sul
+     * tempo PROCESSO. */
+    long   completati_alta_priorita;        /**< priorita' >= 7 (soglia arbitraria su PRIORITY_MAX=10). */
+    double perc_entro_scadenza_alta_priorita;
+    long   completati_bassa_priorita;       /**< priorita' <= 3. */
+    double perc_entro_scadenza_bassa_priorita;
+} statistiche_riepilogo_t;
+
+/**
+ * @brief Calcola il riepilogo aggregato di cui sopra, dallo stesso stato
+ *        interno usato da statistiche_stampa (nessuna logica duplicata:
+ *        stesse somme, stessi criteri di aggregazione).
+ * @param s Puntatore alla struct.
+ * @param ctrl Puntatore al controllore (sola lettura): serve per leggere
+ *        le anomalie qualità (controllore_getAnomalieQualita) e il
+ *        pending finale (controllore_getPendingCount) di ogni entità
+ *        monitorata, dato che quei dati non sono campionati passo per
+ *        passo (stesso motivo per cui statistiche_stampa richiede ctrl).
+ * @param out Struct di destinazione, allocata dal chiamante.
+ * @return OP_SUCCESS se calcolato, ERR_NULL_PTR se s, ctrl o out sono NULL.
+ */
+short int statistiche_getRiepilogo( const statistiche_t *s, const controllore_t *ctrl, statistiche_riepilogo_t *out );
 
 #endif /* STATISTICHE_H */

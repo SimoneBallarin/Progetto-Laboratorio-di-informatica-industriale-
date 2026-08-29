@@ -42,13 +42,31 @@ typedef struct presenzaStat {
     struct presenzaStat *next;
 } presenzaStat_t;
 
-/** @brief Aggregazione per una singola classe di priorità (0..PRIORITY_MAX). */
+/** @brief Aggregazione per una singola classe di priorità (0..PRIORITY_MAX).
+ *
+ * NOMENCLATURA (resa esplicita per evitare l'ambiguità che il campo
+ * originale "somma_tempo_attraversamento" causava - il nome suggeriva
+ * "solo attraversamento", ma il valore era sempre stato il tempo TOTALE
+ * in sistema, coda inclusa):
+ *   - "tempo_sistema"    = stepOut - stepCreation: tempo TOTALE, dalla
+ *     coda di ingresso all'uscita da un buffer terminale (coda + processo).
+ *   - "tempo_processo"   = stepOut - stepPartial: SOLO la pipeline vera e
+ *     propria (ISP1->N1->M->B2->ISP2), ESCLUSA l'attesa in coda su B1.
+ *   - "tempo_attesa"     = stepPartial - stepCreation: SOLO l'attesa in
+ *     coda su B1, prima che l'oggetto inizi ad essere processato.
+ * Vale sempre: tempo_sistema = tempo_attesa + tempo_processo.
+ * La "scadenza" (statistiche_registraCompletamento) viene confrontata
+ * con ENTRAMBI tempo_sistema e tempo_processo, tenuti come due contatori
+ * separati (completati_entro_scadenza_sistema/_processo): non esiste una
+ * "scadenza" unica implicita, il chiamante/lettore decide quale delle
+ * due gli interessa.
+ */
 typedef struct {
     long completati;
-    long completati_entro_scadenza;
-    long somma_tempo_attraversamento;   /**< Tempo TOTALE in sistema: stepOut - stepCreation (coda + processo). */
-    int  tempo_minimo;   /**< -1 se nessun oggetto ancora registrato per questa priorità. */
-    int  tempo_massimo;
+    long completati_entro_scadenza_sistema;    /**< tempo_sistema <= scadenza_passi. */
+    long somma_tempo_sistema;                   /**< Somma di tempo_sistema (TOTALE: coda + processo). */
+    int  tempo_sistema_minimo;   /**< -1 se nessun oggetto ancora registrato per questa priorità. */
+    int  tempo_sistema_massimo;
     /* Scomposizione del tempo totale (vedi object_getStepPartial):
      * quanto di quel tempo e' stato speso in coda nel buffer di ingresso
      * prima di iniziare la lavorazione, e quanto nella pipeline vera e
@@ -57,8 +75,11 @@ typedef struct {
      * (non dovrebbe succedere per un oggetto arrivato a un buffer
      * terminale, ma viene gestito comunque per robustezza). */
     long completati_con_scomposizione;
-    long somma_tempo_attesa;
-    long somma_tempo_processo;
+    long completati_entro_scadenza_processo;    /**< tempo_processo <= scadenza_passi (solo tra i "con_scomposizione"). */
+    long somma_tempo_attesa;                     /**< Somma di tempo_attesa (SOLO coda su B1). */
+    long somma_tempo_processo;                   /**< Somma di tempo_processo (SOLO pipeline, ESCLUSA coda). */
+    int  tempo_processo_minimo;                  /**< -1 se nessun oggetto ancora "con_scomposizione". */
+    int  tempo_processo_massimo;
 } prioritaStat_t;
 
 struct statistiche {
@@ -106,13 +127,16 @@ statistiche_t *statistiche_create( short int *errCode )
 
     for ( p = 0; p <= PRIORITY_MAX; p++ ) {
         s->priorita[p].completati = 0;
-        s->priorita[p].completati_entro_scadenza = 0;
-        s->priorita[p].somma_tempo_attraversamento = 0;
-        s->priorita[p].tempo_minimo = -1;
-        s->priorita[p].tempo_massimo = -1;
+        s->priorita[p].completati_entro_scadenza_sistema = 0;
+        s->priorita[p].somma_tempo_sistema = 0;
+        s->priorita[p].tempo_sistema_minimo = -1;
+        s->priorita[p].tempo_sistema_massimo = -1;
         s->priorita[p].completati_con_scomposizione = 0;
+        s->priorita[p].completati_entro_scadenza_processo = 0;
         s->priorita[p].somma_tempo_attesa = 0;
         s->priorita[p].somma_tempo_processo = 0;
+        s->priorita[p].tempo_processo_minimo = -1;
+        s->priorita[p].tempo_processo_massimo = -1;
     }
 
     if ( errCode != NULL ) { *errCode = OP_SUCCESS; }
@@ -314,7 +338,7 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
     int stepOut;
     int stepCreation;
     int stepPartial;
-    int tempo;
+    int tempo_sistema;
     short int priorita;
     prioritaStat_t *ps;
 
@@ -328,7 +352,7 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
     }
 
     stepCreation = object_getStepCreation( obj );
-    tempo = stepOut - stepCreation;
+    tempo_sistema = stepOut - stepCreation;   /* TOTALE: coda + processo, vedi doc di prioritaStat_t */
 
     priorita = object_getPriority( obj );
     if ( priorita < 0 || priorita > PRIORITY_MAX ) {
@@ -337,12 +361,12 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
 
     ps = &s->priorita[priorita];
     ps->completati++;
-    ps->somma_tempo_attraversamento += tempo;
-    if ( ps->tempo_minimo == -1 || tempo < ps->tempo_minimo ) { ps->tempo_minimo = tempo; }
-    if ( ps->tempo_massimo == -1 || tempo > ps->tempo_massimo ) { ps->tempo_massimo = tempo; }
+    ps->somma_tempo_sistema += tempo_sistema;
+    if ( ps->tempo_sistema_minimo == -1 || tempo_sistema < ps->tempo_sistema_minimo ) { ps->tempo_sistema_minimo = tempo_sistema; }
+    if ( ps->tempo_sistema_massimo == -1 || tempo_sistema > ps->tempo_sistema_massimo ) { ps->tempo_sistema_massimo = tempo_sistema; }
 
-    if ( scadenza_passi > 0 && tempo <= scadenza_passi ) {
-        ps->completati_entro_scadenza++;
+    if ( scadenza_passi > 0 && tempo_sistema <= scadenza_passi ) {
+        ps->completati_entro_scadenza_sistema++;
     }
 
     /* Scomposizione tempo di attesa (coda nel buffer di ingresso) /
@@ -350,12 +374,26 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
      * object_getStepPartial. Se per qualche motivo non risulta
      * mai impostato (STEP_OUT_NONE), l'oggetto viene escluso solo da
      * QUESTA scomposizione: resta comunque conteggiato in "completati"
-     * e nel tempo totale sopra. */
+     * e nel tempo di sistema sopra.
+     *
+     * La stessa scadenza_passi viene confrontata ANCHE col solo
+     * tempo_processo (senza l'attesa in coda): un oggetto può quindi
+     * essere "entro scadenza" secondo una definizione e non secondo
+     * l'altra - vedi statistiche_riepilogo_t in statistiche.h per come
+     * i due contatori vengono esposti separatamente. */
     stepPartial = object_getStepPartial( obj );
     if ( stepPartial != STEP_OUT_NONE ) {
+        int tempo_processo = stepOut - stepPartial;
+
         ps->completati_con_scomposizione++;
         ps->somma_tempo_attesa   += ( stepPartial - stepCreation );
-        ps->somma_tempo_processo += ( stepOut - stepPartial );
+        ps->somma_tempo_processo += tempo_processo;
+        if ( ps->tempo_processo_minimo == -1 || tempo_processo < ps->tempo_processo_minimo ) { ps->tempo_processo_minimo = tempo_processo; }
+        if ( ps->tempo_processo_massimo == -1 || tempo_processo > ps->tempo_processo_massimo ) { ps->tempo_processo_massimo = tempo_processo; }
+
+        if ( scadenza_passi > 0 && tempo_processo <= scadenza_passi ) {
+            ps->completati_entro_scadenza_processo++;
+        }
     }
 
     return OP_SUCCESS;
@@ -454,12 +492,14 @@ void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int 
             continue;
         }
         long anomalie = controllore_getAnomalieQualita( ctrl, iCur->ID );
+        long stepBlocco = controllore_getStepBloccoGuasto( ctrl, iCur->ID );
         long tipi[3] = { 0, 0, 0 };
         long matA = controllore_getMaterialeA( ctrl, iCur->ID );
         long matB = controllore_getMaterialeB( ctrl, iCur->ID );
+        long matNonClass = controllore_getMaterialeNonClassificato( ctrl, iCur->ID );
         controllore_getTipoLettureQualita( ctrl, iCur->ID, tipi );
-        stampa_dual( f, "  %-8s letture=%-4ld anomalie=%-4ld  CONFORME=%ld RIVALUTAZIONE=%ld SCARTO=%ld  materiale A=%ld B=%ld\n",
-                iCur->ID, letture, anomalie, tipi[0], tipi[1], tipi[2], matA, matB );
+        stampa_dual( f, "  %-8s letture=%-4ld anomalie=%-4ld step_bloccata_per_guasto=%-4ld  CONFORME=%ld RIVALUTAZIONE=%ld SCARTO=%ld  materiale A=%ld B=%ld non_classificato=%ld\n",
+                iCur->ID, letture, anomalie, stepBlocco, tipi[0], tipi[1], tipi[2], matA, matB, matNonClass );
     }
 
     stampa_dual( f, "\n-- Sensori di presenza (per ID monitorato) --\n" );
@@ -480,27 +520,142 @@ void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int 
         stampa_dual( f, "  %-8s letture=%-4ld  rilevamenti (nuovi arrivi distinti)=%ld\n", pCur->ID, letture, rilevamenti );
     }
 
-    stampa_dual( f, "\n-- Tempo di attraversamento e completamento, per classe di priorità --\n" );
+    stampa_dual( f, "\n-- Tempo in sistema e completamento, per classe di priorita' --\n" );
+    stampa_dual( f, "   (SISTEMA = coda di ingresso + pipeline; PROCESSO = solo pipeline, ESCLUSA la coda)\n" );
     for ( p = 0; p <= PRIORITY_MAX; p++ ) {
         const prioritaStat_t *ps = &s->priorita[p];
         if ( ps->completati == 0 ) {
             continue; /* nessun oggetto di questa priorita': non stampiamo una riga vuota */
         }
-        double media_tempo = (double) ps->somma_tempo_attraversamento / ps->completati;
-        double perc_entro_scadenza = 100.0 * ps->completati_entro_scadenza / ps->completati;
-        stampa_dual( f, "  priorita' %2d: completati=%-4ld  tempo TOTALE(min/media/max)=%d/%.1f/%d  entro scadenza=%.0f%%\n",
-                p, ps->completati, ps->tempo_minimo, media_tempo, ps->tempo_massimo, perc_entro_scadenza );
+        double media_sistema = (double) ps->somma_tempo_sistema / ps->completati;
+        double perc_entro_scadenza_sistema = 100.0 * ps->completati_entro_scadenza_sistema / ps->completati;
+        stampa_dual( f, "  priorita' %2d: completati=%-4ld  tempo SISTEMA(min/media/max)=%d/%.1f/%d  entro scadenza(SISTEMA)=%.0f%%\n",
+                p, ps->completati, ps->tempo_sistema_minimo, media_sistema, ps->tempo_sistema_massimo, perc_entro_scadenza_sistema );
         if ( ps->completati_con_scomposizione > 0 ) {
-            double media_attesa          = (double) ps->somma_tempo_attesa   / ps->completati_con_scomposizione;
-            double media_attraversamento = (double) ps->somma_tempo_processo / ps->completati_con_scomposizione;
-            stampa_dual( f, "                 di cui (media): attesa in coda=%.1f + attraversamento=%.1f = %.1f\n",
-                    media_attesa, media_attraversamento, media_attesa + media_attraversamento );
+            double media_attesa = (double) ps->somma_tempo_attesa   / ps->completati_con_scomposizione;
+            double media_processo = (double) ps->somma_tempo_processo / ps->completati_con_scomposizione;
+            double perc_entro_scadenza_processo = 100.0 * ps->completati_entro_scadenza_processo / ps->completati_con_scomposizione;
+            stampa_dual( f, "                 di cui (media): attesa in coda=%.1f + PROCESSO=%.1f = %.1f  |  "
+                             "PROCESSO(min/max)=%d/%d  entro scadenza(PROCESSO)=%.0f%%\n",
+                    media_attesa, media_processo, media_attesa + media_processo,
+                    ps->tempo_processo_minimo, ps->tempo_processo_massimo, perc_entro_scadenza_processo );
         }
         totale_completati += ps->completati;
     }
-    stampa_dual( f, "  TOTALE completati (con tempo di attraversamento registrato): %ld\n", totale_completati );
+    stampa_dual( f, "  TOTALE completati (con tempo in sistema registrato): %ld\n", totale_completati );
 
     if ( f != NULL ) {
         fclose( f );
     }
+}
+
+short int statistiche_getRiepilogo( const statistiche_t *s, const controllore_t *ctrl, statistiche_riepilogo_t *out )
+{
+    bufferStat_t *bCur;
+    ispStat_t *iCur;
+    int p;
+    long somma_tempo_sistema_pesata = 0;
+    long somma_entro_scadenza_sistema = 0;
+    long somma_tempo_processo_pesata = 0;
+    long somma_entro_scadenza_processo = 0;
+    long totale_con_scomposizione = 0;
+    double somma_medie_buffer = 0.0;
+    int n_buffer_monitorati = 0;
+
+    if ( s == NULL || ctrl == NULL || out == NULL ) {
+        return ERR_NULL_PTR;
+    }
+
+    out->totale_completati = 0;
+    out->perc_entro_scadenza_tempo_sistema = 0.0;
+    out->tempo_medio_sistema = 0.0;
+    out->perc_entro_scadenza_tempo_processo = 0.0;
+    out->tempo_medio_processo = 0.0;
+    out->occupazione_media_buffer = 0.0;
+    out->occupazione_massima_buffer = 0;
+    out->totale_blocchi = s->blocchi_non_monitorati;
+    out->totale_anomalie_qualita = 0;
+    out->pending_finale = controllore_getPendingCount( ctrl );
+    out->completati_alta_priorita = 0;
+    out->perc_entro_scadenza_alta_priorita = 0.0;
+    out->completati_bassa_priorita = 0;
+    out->perc_entro_scadenza_bassa_priorita = 0.0;
+
+    {
+        long entro_scadenza_alta = 0;
+        long entro_scadenza_bassa = 0;
+
+        /* Stesse somme di statistiche_stampa (sezione "Tempo in sistema e
+         * completamento"), ma aggregate su tutte le priorità invece che
+         * stampate una riga alla volta - più la scomposizione alta/bassa
+         * priorità (vedi doc del campo in statistiche.h). La
+         * scomposizione alta/bassa priorità resta sul tempo SISTEMA
+         * (coerente con l'obiettivo "rispetto delle priorità" della sez.
+         * 2.1 del progetto, che riguarda l'attesa vissuta dall'oggetto,
+         * non solo il tempo di pipeline). */
+        for ( p = 0; p <= PRIORITY_MAX; p++ ) {
+            const prioritaStat_t *ps = &s->priorita[p];
+            if ( ps->completati == 0 ) {
+                continue;
+            }
+            out->totale_completati += ps->completati;
+            somma_tempo_sistema_pesata += ps->somma_tempo_sistema;
+            somma_entro_scadenza_sistema += ps->completati_entro_scadenza_sistema;
+
+            totale_con_scomposizione += ps->completati_con_scomposizione;
+            somma_tempo_processo_pesata += ps->somma_tempo_processo;
+            somma_entro_scadenza_processo += ps->completati_entro_scadenza_processo;
+
+            if ( p >= 7 ) {
+                out->completati_alta_priorita += ps->completati;
+                entro_scadenza_alta += ps->completati_entro_scadenza_sistema;
+            } else if ( p <= 3 ) {
+                out->completati_bassa_priorita += ps->completati;
+                entro_scadenza_bassa += ps->completati_entro_scadenza_sistema;
+            }
+        }
+        if ( out->completati_alta_priorita > 0 ) {
+            out->perc_entro_scadenza_alta_priorita = 100.0 * (double) entro_scadenza_alta / out->completati_alta_priorita;
+        }
+        if ( out->completati_bassa_priorita > 0 ) {
+            out->perc_entro_scadenza_bassa_priorita = 100.0 * (double) entro_scadenza_bassa / out->completati_bassa_priorita;
+        }
+    }
+    if ( out->totale_completati > 0 ) {
+        out->tempo_medio_sistema = (double) somma_tempo_sistema_pesata / out->totale_completati;
+        out->perc_entro_scadenza_tempo_sistema = 100.0 * (double) somma_entro_scadenza_sistema / out->totale_completati;
+    }
+    if ( totale_con_scomposizione > 0 ) {
+        out->tempo_medio_processo = (double) somma_tempo_processo_pesata / totale_con_scomposizione;
+        out->perc_entro_scadenza_tempo_processo = 100.0 * (double) somma_entro_scadenza_processo / totale_con_scomposizione;
+    }
+
+    /* Stesse somme di statistiche_stampa (sezione "Occupazione buffer"):
+     * media delle medie e massimo dei massimi, sui buffer monitorati. */
+    for ( bCur = s->buffer; bCur != NULL; bCur = bCur->next ) {
+        double media = ( bCur->campioni > 0 ) ? ( (double) bCur->somma_percentuale / bCur->campioni ) : 0.0;
+        somma_medie_buffer += media;
+        n_buffer_monitorati++;
+        if ( bCur->massimo_percentuale > out->occupazione_massima_buffer ) {
+            out->occupazione_massima_buffer = bCur->massimo_percentuale;
+        }
+        out->totale_blocchi += bCur->blocchi;
+    }
+    if ( n_buffer_monitorati > 0 ) {
+        out->occupazione_media_buffer = somma_medie_buffer / n_buffer_monitorati;
+    }
+
+    /* Stessa fonte di statistiche_stampa (sezione "Sensori di qualità"):
+     * somma delle anomalie di ogni ISP monitorata. Valori negativi
+     * (ERR_*, ISP monitorata ma senza sensore agganciato) non vengono
+     * sommati, coerentemente con statistiche_stampa che li segnala e
+     * salta invece di stamparli come numero. */
+    for ( iCur = s->isp; iCur != NULL; iCur = iCur->next ) {
+        long anomalie = controllore_getAnomalieQualita( ctrl, iCur->ID );
+        if ( anomalie >= 0 ) {
+            out->totale_anomalie_qualita += anomalie;
+        }
+    }
+
+    return OP_SUCCESS;
 }

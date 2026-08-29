@@ -21,6 +21,18 @@ static void trim_line( char *line )
     while ( line[start] == ' ' || line[start] == '\t' ) start++;
     if ( start > 0 ) memmove( line, line + start, strlen( line + start ) + 1 );
 
+    /* Riga di commento (primo carattere non-spazio e' '#'): trattata come
+     * riga vuota. Ogni chiamante di trim_line fa gia' "if (line[0] ==
+     * '\0') continue;" subito dopo, quindi basta questa unica modifica
+     * per far funzionare i commenti in TUTTI i file di configurazione
+     * (impianto, scenario, oggetti), senza dover toccare ogni singolo
+     * ciclo di parsing uno per uno - e senza produrre avvisi spuri tipo
+     * "tipo di record sconosciuto" per righe che iniziano con '#'. */
+    if ( line[0] == '#' ) {
+        line[0] = '\0';
+        return;
+    }
+
     int len = (int) strlen( line );
     while ( len > 0 && ( line[len - 1] == ' ' || line[len - 1] == '\t' ) ) {
         line[len - 1] = '\0';
@@ -429,8 +441,14 @@ int parser_caricaOggetti( cell_t *cell, controllore_t *ctrl, const char *path,
         return 0;
     }
 
-    buffer_t *buffer_ingresso = cell_getBuffer( cell, bufferIngressoID );
-    if ( buffer_ingresso == NULL ) {
+    /* Verifica solo che il buffer esista ADESSO (fail-fast su un
+     * percorso/ID sbagliato nel file di configurazione): NON serve piu'
+     * controllare buffer_isFull qui, dato che ogni oggetto viene
+     * SCHEDULATO (controllore_schedulaArrivo) per il proprio
+     * ARRIVAL_STEP invece di essere inserito subito - l'eventuale buffer
+     * pieno al momento giusto viene gestito automaticamente da
+     * retryArriviSchedulati (ritenta ai passi successivi, non scarta). */
+    if ( cell_getBuffer( cell, bufferIngressoID ) == NULL ) {
         fprintf( stderr, "[parser] buffer di ingresso '%s' non trovato nella cella\n", bufferIngressoID );
         if ( errCode ) *errCode = ERR_NOT_FOUND;
         return 0;
@@ -495,14 +513,18 @@ int parser_caricaOggetti( cell_t *cell, controllore_t *ctrl, const char *path,
                      line_no, id_str );
             continue;
         }
-
-        if ( buffer_isFull( buffer_ingresso ) ) {
-            fprintf( stderr, "[parser riga %d] oggetto '%s': buffer '%s' pieno, riga scartata\n",
-                     line_no, id_str, bufferIngressoID );
+        if ( arrival < 0 ) {
+            fprintf( stderr, "[parser riga %d] oggetto '%s': ARRIVAL_STEP negativo, riga scartata\n",
+                     line_no, id_str );
             continue;
         }
 
         short int err;
+        /* stepCreation = arrival: adesso e' corretto farlo coincidere,
+         * perche' l'oggetto verra' DAVVERO inserito nel buffer a quello
+         * step (vedi controllore_schedulaArrivo sotto), non prima come
+         * succedeva con l'inserimento immediato della versione
+         * precedente di questa funzione. */
         object_t *obj = object_create( id_str, priority, type, arrival, dimensionX, raggio, &err );
         if ( obj == NULL ) {
             fprintf( stderr, "[parser riga %d] oggetto '%s': errore creazione (codice %d), riga scartata\n",
@@ -510,15 +532,21 @@ int parser_caricaOggetti( cell_t *cell, controllore_t *ctrl, const char *path,
             continue;
         }
 
-        if ( buffer_insertObject( buffer_ingresso, obj, true ) != OP_SUCCESS ) {
-            fprintf( stderr, "[parser riga %d] oggetto '%s': errore inserimento in '%s', riga scartata\n",
-                     line_no, id_str, bufferIngressoID );
+        /* controllore_schedulaArrivo (non buffer_insertObject diretto):
+         * inserisce l'oggetto nel buffer SOLO quando la simulazione
+         * raggiunge arrival_step, aggiornando correttamente anche
+         * l'eventuale SensoreBuffer agganciato (un inserimento diretto
+         * lo lascerebbe permanentemente disallineato dal reale livello
+         * del buffer - bug della versione precedente di questa
+         * funzione, corretto insieme all'introduzione di questo
+         * meccanismo). */
+        err = controllore_schedulaArrivo( ctrl, bufferIngressoID, obj, arrival );
+        if ( err != OP_SUCCESS ) {
+            fprintf( stderr, "[parser riga %d] oggetto '%s': errore schedulazione arrivo (codice %d), riga scartata\n",
+                     line_no, id_str, err );
             object_delete( obj );
             continue;
         }
-        object_setLocation( obj, bufferIngressoID );
-
-        controllore_segnalaArrivo( ctrl, bufferIngressoID, arrival, 1 );
 
         caricati++;
     }
@@ -571,7 +599,34 @@ int parser_caricaScenario( const char *path, ScenarioConfig *out, short int *err
         } else if ( strcmp( key, "FAULT_ENABLED" ) == 0 ) {
             out->guasto_abilitato = ( atoi( value ) != 0 );
         } else if ( strcmp( key, "FAULT_ISP" ) == 0 ) {
-            strncpy( out->guasto_isp_id, value, IDLENGTH - 1 );
+            /* Una o piu' ISP separate da virgola, es. "ISP1,ISP2" (senza
+             * spazi attorno alla virgola - trim_line ha gia' tolto solo
+             * gli spazi a inizio/fine riga, non quelli interni). Oltre
+             * MAX_GUASTO_ISP entrate, le successive vengono scartate con
+             * un avviso invece di essere ignorate silenziosamente o
+             * sovrascrivere memoria oltre l'array. Riusa split_csv (gia'
+             * usata per il file oggetti) invece di strtok_r, che non e'
+             * C11 standard senza una macro POSIX. */
+            char value_copy[64];
+            char *tokens[MAX_GUASTO_ISP + 1];  /* +1 per rilevare "troppe entrate" senza troncare silenziosamente */
+            int n_tokens;
+            int t;
+
+            strncpy( value_copy, value, sizeof( value_copy ) - 1 );
+            value_copy[sizeof( value_copy ) - 1] = '\0';
+
+            n_tokens = split_csv( value_copy, tokens, MAX_GUASTO_ISP + 1 );
+            out->n_guasto_isp = 0;
+            for ( t = 0; t < n_tokens; t++ ) {
+                if ( out->n_guasto_isp >= MAX_GUASTO_ISP ) {
+                    fprintf( stderr, "[parser riga %d] scenario: FAULT_ISP ha piu' di %d ISP, '%s' e le successive scartate\n",
+                             line_no, MAX_GUASTO_ISP, tokens[t] );
+                    break;
+                }
+                strncpy( out->guasto_isp_id[out->n_guasto_isp], tokens[t], IDLENGTH - 1 );
+                out->guasto_isp_id[out->n_guasto_isp][IDLENGTH - 1] = '\0';
+                out->n_guasto_isp++;
+            }
         } else if ( strcmp( key, "FAULT_TIME_ERROR" ) == 0 ) {
             out->guasto_tempo_errore = atoi( value );
         } else if ( strcmp( key, "FAULT_TIME_OK" ) == 0 ) {
@@ -588,16 +643,30 @@ int parser_caricaScenario( const char *path, ScenarioConfig *out, short int *err
 
 short int parser_applicaScenario( controllore_t *ctrl, const ScenarioConfig *scenario )
 {
-    if ( ctrl == NULL || scenario == NULL ) return ERR_NULL_PTR;
-    if ( scenario->guasto_isp_id[0] == '\0' ) return OP_SUCCESS; /* nessun guasto da configurare */
+    int i;
+    short int ultimoErrore = OP_SUCCESS;
 
-    /* Richiede che un SensoreQualita sia gia' stato agganciato a questa
-     * ISP con parser_collegaSensoriQualita, PRIMA di chiamare questa
-     * funzione: altrimenti restituisce ERR_NOT_FOUND. */
-    return controllore_impostaGuastoQualita( ctrl, scenario->guasto_isp_id,
-                                              scenario->guasto_abilitato,
-                                              scenario->guasto_tempo_errore,
-                                              scenario->guasto_tempo_ok );
+    if ( ctrl == NULL || scenario == NULL ) return ERR_NULL_PTR;
+    if ( scenario->n_guasto_isp == 0 ) return OP_SUCCESS; /* nessun guasto da configurare */
+
+    /* Applica lo STESSO guasto (abilitato/tempo_errore/tempo_ok) a OGNI
+     * ISP elencata in FAULT_ISP - vedi doc in parser.h. Continua anche
+     * se una fallisce (es. ID non trovato o senza sensore agganciato),
+     * per non lasciare le altre non configurate solo perche' una e'
+     * sbagliata; l'errore dell'ultima entrata fallita viene comunque
+     * restituito al chiamante. */
+    for ( i = 0; i < scenario->n_guasto_isp; i++ ) {
+        short int err = controllore_impostaGuastoQualita( ctrl, scenario->guasto_isp_id[i],
+                                                            scenario->guasto_abilitato,
+                                                            scenario->guasto_tempo_errore,
+                                                            scenario->guasto_tempo_ok );
+        if ( err != OP_SUCCESS ) {
+            fprintf( stderr, "[parser] guasto su '%s': errore (codice %d), le altre ISP elencate vengono comunque applicate\n",
+                     scenario->guasto_isp_id[i], err );
+            ultimoErrore = err;
+        }
+    }
+    return ultimoErrore;
 }
 
 /* ---------------------------------------------------------------------
@@ -615,6 +684,7 @@ int parser_caricaSimulazione( const char *path, SimulationConfig *out, short int
     memset( out, 0, sizeof( *out ) );
     out->n_step_simulazione    = 60;
     out->n_pezzi_prova         = 10;
+    out->n_pezzi_prova_b2      = 0;   /* default: nessun pezzo pre-caricato in B2, comportamento storico */
     out->soglia_buffer         = 0.8;
     out->gen_target_dimensionX = 100.0;
     out->gen_target_raggio     = 10.0;
@@ -642,6 +712,8 @@ int parser_caricaSimulazione( const char *path, SimulationConfig *out, short int
             out->n_step_simulazione = atoi( value );
         } else if ( strcmp( key, "SIM_PEZZI" ) == 0 ) {
             out->n_pezzi_prova = atoi( value );
+        } else if ( strcmp( key, "SIM_PEZZI_B2" ) == 0 ) {
+            out->n_pezzi_prova_b2 = atoi( value );
         } else if ( strcmp( key, "SOGLIA_BUFFER" ) == 0 ) {
             out->soglia_buffer = atof( value );
         } else if ( strcmp( key, "GEN_TARGET_DIMENSIONX" ) == 0 ) {
