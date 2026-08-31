@@ -31,6 +31,7 @@
 #include "object.h"
 #include "errors.h"
 #include "Controllore.h"
+#include <stdbool.h>
 
 typedef struct statistiche statistiche_t;
 
@@ -181,15 +182,22 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
  * @param n_step_simulazione Numero di passi totali della simulazione
  *        (statistica #1) - non è tenuto internamente dalla libreria,
  *        va passato da chi lo sa (il main).
- * @param path_output Percorso di un file .txt su cui scrivere lo STESSO
- *        riepilogo stampato su stdout (sovrascrive un eventuale file
- *        preesistente con lo stesso nome), oppure NULL per stampare
- *        solo su stdout come nella versione precedente. Se il file non
- *        è apribile, un avviso viene stampato su stderr e la funzione
- *        prosegue comunque con la sola stampa su stdout (un file non
- *        scrivibile non deve far perdere anche l'output a schermo).
+ * @param path_output Percorso di un file .txt su cui scrivere il
+ *        riepilogo (sovrascrive un eventuale file preesistente con lo
+ *        stesso nome), oppure NULL per non scrivere su file. Scritto
+ *        SEMPRE, indipendentemente da anche_su_stdout: rappresenta il
+ *        resoconto persistente della run, va salvato anche quando la
+ *        stampa a schermo è disattivata. Se il file non è apribile, un
+ *        avviso viene stampato su stderr e la funzione prosegue comunque.
+ * @param anche_su_stdout Se true, il riepilogo viene anche stampato su
+ *        stdout (oltre che scritto su file, se path_output non è NULL);
+ *        se false, va SOLO su file. Utile per non affollare la console
+ *        quando la stessa funzione viene chiamata più volte nello stesso
+ *        processo (es. il confronto automatico tra due strategie in
+ *        app/main.c, dove solo la prima run stampa a schermo).
  */
-void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione, const char *path_output );
+void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione,
+                          const char *path_output, bool anche_su_stdout );
 
 /**
  * @brief Riepilogo aggregato "a una riga per metrica", pensato per un

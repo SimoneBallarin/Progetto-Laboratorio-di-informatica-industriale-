@@ -36,6 +36,10 @@
  *   ISP,ID=ISP1,TEMPO=1,DIMX_TARGET=100,RAGGIO_TARGET=10
  *   CONNECT,FROM=B1,TO=ISP1
  *
+ * MACCHINA accetta anche un campo facoltativo TOLLERANZA (frazione, es.
+ * 0.02 = 2%, vedi machine_setTolleranzaLavorazione): se assente resta il
+ * default storico (0.02, vedi TOLLERANZA_LAVORAZIONE_DEFAULT in machine.c).
+ *
  * L'ordine delle righe conta: un CONNECT richiede che FROM e TO siano
  * gia' stati creati da una riga precedente.
  *
@@ -101,6 +105,23 @@ int parser_collegaSensoriPresenza( controllore_t *ctrl, const char *path, short 
  *        ogni ISP la cui riga specifica target > 0 (le ISP "passacarte"
  *        con DIMX_TARGET=0 e RAGGIO_TARGET=0 vengono saltate: non fanno
  *        nessun controllo qualita', per design - vedi isp.h).
+ *
+ * Riconosce anche due campi facoltativi, TOLLERANZA_CONFORME e
+ * TOLLERANZA_RIVALUTAZIONE (percentuale di scostamento dal target, vedi
+ * controllore_impostaToleranzaQualita): se assenti, l'ISP resta sui
+ * default storici (5%/10%). Vanno indicati ENTRAMBI o nessuno dei due,
+ * altrimenti la riga viene collegata comunque ma con un avviso e le
+ * tolleranze restano al default.
+ *
+ * Riconosce anche un campo facoltativo SMISTAMENTO (vedi
+ * tipo_smistamento_t in Controllore.h e controllore_impostaSmistamentoQualita):
+ * valori accettati PASSACARTE/MATERIALE/QUALITA/ENTRAMBI/AUTO. Se assente
+ * (o non riconosciuto), resta AUTO (dedotto dal numero di uscite
+ * collegate via CONNECT, comportamento storico). Permette di scrivere lo
+ * stesso plant_config per layout diversi (es. layout 1 con un'unica ISP
+ * finale ENTRAMBI a 4 uscite, o layout 2 con un'ISP iniziale MATERIALE e
+ * piu' ISP finali QUALITA su linee separate) cambiando solo CONNECT e
+ * SMISTAMENTO, senza toccare il codice.
  * @param ctrl Controllore gia' creato (controllore_create).
  * @param path Percorso del file di configurazione impianto.
  * @param errCode puntatore opzionale (puo' essere NULL).
@@ -212,6 +233,10 @@ typedef struct {
     double gen_target_dimensionX;  /* misura nominale di ingresso, es. 100 */
     double gen_target_raggio;      /* misura nominale di ingresso, es. 10 */
     int    gen_errore_pct;         /* ampiezza massima dell'errore casuale, in punti percentuali (es. 2 = +/-2%) */
+    int    scadenza_step;          /* passi di simulazione entro cui un pezzo e' "in tempo" (statistiche
+                                     * "entro scadenza", vedi statistiche_registraCompletamento in app/main.c
+                                     * e SCADENZA_STEP nel plant_config). Stessa scadenza per TUTTI i pezzi,
+                                     * non per-oggetto/per-priorita' (vedi limitazioni note in README.md). */
 } SimulationConfig;
 
 /**
@@ -219,10 +244,11 @@ typedef struct {
  *        parser_costruisciCella) ed estrae i parametri globali di
  *        simulazione (righe SIM_STEPS=, SIM_PEZZI=, SIM_PEZZI_B2=,
  *        SOGLIA_BUFFER=, GEN_TARGET_DIMENSIONX=, GEN_TARGET_RAGGIO=,
- *        GEN_ERRORE_PCT=).
+ *        GEN_ERRORE_PCT=, SCADENZA_STEP=).
  * @param path Percorso del file di configurazione impianto.
  * @param out Struct da riempire (viene azzerata e reinizializzata con
- *        dei default ragionevoli per ogni chiave assente dal file).
+ *        dei default ragionevoli per ogni chiave assente dal file,
+ *        incluso SCADENZA_STEP=40 se assente - comportamento storico).
  * @param errCode puntatore opzionale (puo' essere NULL).
  * @return 1 se il file e' stato letto correttamente, 0 se non si apre.
  */

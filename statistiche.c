@@ -404,18 +404,20 @@ short int statistiche_registraCompletamento( statistiche_t *s, const object_t *o
 /* ------------------------------------------------------------------ */
 
 /**
- * @brief Stampa in stile printf su stdout E, se f non è NULL, anche su
- *        quel file - stessa riga, stesso contenuto, due destinazioni.
- *        Helper interno usato da statistiche_stampa per duplicare
- *        l'output su file senza raddoppiare ogni singola chiamata.
+ * @brief Scrive in stile printf su file (se f non è NULL) e, se
+ *        anche_su_stdout è true, anche su stdout - stessa riga, stesso
+ *        contenuto, fino a due destinazioni. Helper interno usato da
+ *        statistiche_stampa per non raddoppiare ogni singola chiamata.
  */
-static void stampa_dual( FILE *f, const char *formato, ... )
+static void stampa_dual( bool anche_su_stdout, FILE *f, const char *formato, ... )
 {
     va_list args;
 
-    va_start( args, formato );
-    vprintf( formato, args );
-    va_end( args );
+    if ( anche_su_stdout ) {
+        va_start( args, formato );
+        vprintf( formato, args );
+        va_end( args );
+    }
 
     if ( f != NULL ) {
         va_start( args, formato );
@@ -424,7 +426,8 @@ static void stampa_dual( FILE *f, const char *formato, ... )
     }
 }
 
-void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione, const char *path_output )
+void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int n_step_simulazione,
+                          const char *path_output, bool anche_su_stdout )
 {
     bufferStat_t *bCur;
     motoreStat_t *mCur;
@@ -435,60 +438,61 @@ void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int 
     if ( path_output != NULL ) {
         f = fopen( path_output, "w" );
         if ( f == NULL ) {
-            fprintf( stderr, "statistiche_stampa: impossibile aprire '%s', si procede solo su stdout\n", path_output );
+            fprintf( stderr, "statistiche_stampa: impossibile aprire '%s'%s\n", path_output,
+                     anche_su_stdout ? ", si procede solo su stdout" : "" );
         }
     }
 
     if ( s == NULL ) {
-        stampa_dual( f, "statistiche_stampa: statistiche NULL\n" );
+        stampa_dual( anche_su_stdout, f, "statistiche_stampa: statistiche NULL\n" );
         if ( f != NULL ) { fclose( f ); }
         return;
     }
 
-    stampa_dual( f, "\n=== STATISTICHE ===\n" );
+    stampa_dual( anche_su_stdout, f, "\n=== STATISTICHE ===\n" );
 
-    stampa_dual( f, "\n-- Tempo --\n" );
-    stampa_dual( f, "  Tempo totale di simulazione: %d passi\n", n_step_simulazione );
+    stampa_dual( anche_su_stdout, f, "\n-- Tempo --\n" );
+    stampa_dual( anche_su_stdout, f, "  Tempo totale di simulazione: %d passi\n", n_step_simulazione );
 
-    stampa_dual( f, "\n-- Occupazione buffer (media/massima nel tempo, su tutti i campioni raccolti) --\n" );
+    stampa_dual( anche_su_stdout, f, "\n-- Occupazione buffer (media/massima nel tempo, su tutti i campioni raccolti) --\n" );
     if ( s->buffer == NULL ) {
-        stampa_dual( f, "  (nessun buffer monitorato: vedi statistiche_monitoraBuffer)\n" );
+        stampa_dual( anche_su_stdout, f, "  (nessun buffer monitorato: vedi statistiche_monitoraBuffer)\n" );
     }
     for ( bCur = s->buffer; bCur != NULL; bCur = bCur->next ) {
         double media = ( bCur->campioni > 0 ) ? ( (double) bCur->somma_percentuale / bCur->campioni ) : 0.0;
-        stampa_dual( f, "  %-16s media=%5.1f%%  massima=%3d%%  campioni=%-4d  blocchi=%ld\n",
+        stampa_dual( anche_su_stdout, f, "  %-16s media=%5.1f%%  massima=%3d%%  campioni=%-4d  blocchi=%ld\n",
                 bCur->ID, media, bCur->massimo_percentuale, bCur->campioni, bCur->blocchi );
     }
     if ( s->blocchi_non_monitorati > 0 ) {
-        stampa_dual( f, "  (altri %ld blocchi su buffer non monitorati)\n", s->blocchi_non_monitorati );
+        stampa_dual( anche_su_stdout, f, "  (altri %ld blocchi su buffer non monitorati)\n", s->blocchi_non_monitorati );
     }
 
-    stampa_dual( f, "\n-- Motori (tempo cumulativo ON/OFF, in passi di simulazione) --\n" );
+    stampa_dual( anche_su_stdout, f, "\n-- Motori (tempo cumulativo ON/OFF, in passi di simulazione) --\n" );
     if ( s->motori == NULL ) {
-        stampa_dual( f, "  (nessun motore monitorato: vedi statistiche_monitoraMotore)\n" );
+        stampa_dual( anche_su_stdout, f, "  (nessun motore monitorato: vedi statistiche_monitoraMotore)\n" );
     }
     for ( mCur = s->motori; mCur != NULL; mCur = mCur->next ) {
         if ( ctrl == NULL ) {
-            stampa_dual( f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere il tempo)\n", mCur->ID );
+            stampa_dual( anche_su_stdout, f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere il tempo)\n", mCur->ID );
             continue;
         }
         long on = controllore_getTempoMotoreOn( ctrl, mCur->ID );
         long off = controllore_getTempoMotoreOff( ctrl, mCur->ID );
-        stampa_dual( f, "  %-8s ON=%-5ld OFF=%-5ld totale=%ld\n", mCur->ID, on, off, on + off );
+        stampa_dual( anche_su_stdout, f, "  %-8s ON=%-5ld OFF=%-5ld totale=%ld\n", mCur->ID, on, off, on + off );
     }
 
-    stampa_dual( f, "\n-- Sensori di qualità (per ISP monitorata) --\n" );
+    stampa_dual( anche_su_stdout, f, "\n-- Sensori di qualità (per ISP monitorata) --\n" );
     if ( s->isp == NULL ) {
-        stampa_dual( f, "  (nessuna ISP monitorata: vedi statistiche_monitoraISP)\n" );
+        stampa_dual( anche_su_stdout, f, "  (nessuna ISP monitorata: vedi statistiche_monitoraISP)\n" );
     }
     for ( ispStat_t *iCur = s->isp; iCur != NULL; iCur = iCur->next ) {
         if ( ctrl == NULL ) {
-            stampa_dual( f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere)\n", iCur->ID );
+            stampa_dual( anche_su_stdout, f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere)\n", iCur->ID );
             continue;
         }
         long letture = controllore_getLettureQualita( ctrl, iCur->ID );
         if ( letture < 0 ) {
-            stampa_dual( f, "  %-8s nessun sensore di qualità agganciato (vedi controllore_collegaSensoreQualita)\n", iCur->ID );
+            stampa_dual( anche_su_stdout, f, "  %-8s nessun sensore di qualità agganciato (vedi controllore_collegaSensoreQualita)\n", iCur->ID );
             continue;
         }
         long anomalie = controllore_getAnomalieQualita( ctrl, iCur->ID );
@@ -498,30 +502,30 @@ void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int 
         long matB = controllore_getMaterialeB( ctrl, iCur->ID );
         long matNonClass = controllore_getMaterialeNonClassificato( ctrl, iCur->ID );
         controllore_getTipoLettureQualita( ctrl, iCur->ID, tipi );
-        stampa_dual( f, "  %-8s letture=%-4ld anomalie=%-4ld step_bloccata_per_guasto=%-4ld  CONFORME=%ld RIVALUTAZIONE=%ld SCARTO=%ld  materiale A=%ld B=%ld non_classificato=%ld\n",
+        stampa_dual( anche_su_stdout, f, "  %-8s letture=%-4ld anomalie=%-4ld step_bloccata_per_guasto=%-4ld  CONFORME=%ld RIVALUTAZIONE=%ld SCARTO=%ld  materiale A=%ld B=%ld non_classificato=%ld\n",
                 iCur->ID, letture, anomalie, stepBlocco, tipi[0], tipi[1], tipi[2], matA, matB, matNonClass );
     }
 
-    stampa_dual( f, "\n-- Sensori di presenza (per ID monitorato) --\n" );
+    stampa_dual( anche_su_stdout, f, "\n-- Sensori di presenza (per ID monitorato) --\n" );
     if ( s->presenza == NULL ) {
-        stampa_dual( f, "  (nessun sensore di presenza monitorato: vedi statistiche_monitoraSensorePresenza)\n" );
+        stampa_dual( anche_su_stdout, f, "  (nessun sensore di presenza monitorato: vedi statistiche_monitoraSensorePresenza)\n" );
     }
     for ( presenzaStat_t *pCur = s->presenza; pCur != NULL; pCur = pCur->next ) {
         if ( ctrl == NULL ) {
-            stampa_dual( f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere)\n", pCur->ID );
+            stampa_dual( anche_su_stdout, f, "  %-8s (controllore non passato a statistiche_stampa: impossibile leggere)\n", pCur->ID );
             continue;
         }
         long letture = controllore_getLetturePresenza( ctrl, pCur->ID );
         if ( letture < 0 ) {
-            stampa_dual( f, "  %-8s nessun sensore di presenza agganciato (vedi controllore_collegaSensorePresenza)\n", pCur->ID );
+            stampa_dual( anche_su_stdout, f, "  %-8s nessun sensore di presenza agganciato (vedi controllore_collegaSensorePresenza)\n", pCur->ID );
             continue;
         }
         long rilevamenti = controllore_getRilevamentiPresenza( ctrl, pCur->ID );
-        stampa_dual( f, "  %-8s letture=%-4ld  rilevamenti (nuovi arrivi distinti)=%ld\n", pCur->ID, letture, rilevamenti );
+        stampa_dual( anche_su_stdout, f, "  %-8s letture=%-4ld  rilevamenti (nuovi arrivi distinti)=%ld\n", pCur->ID, letture, rilevamenti );
     }
 
-    stampa_dual( f, "\n-- Tempo in sistema e completamento, per classe di priorita' --\n" );
-    stampa_dual( f, "   (SISTEMA = coda di ingresso + pipeline; PROCESSO = solo pipeline, ESCLUSA la coda)\n" );
+    stampa_dual( anche_su_stdout, f, "\n-- Tempo in sistema e completamento, per classe di priorita' --\n" );
+    stampa_dual( anche_su_stdout, f, "   (SISTEMA = coda di ingresso + pipeline; PROCESSO = solo pipeline, ESCLUSA la coda)\n" );
     for ( p = 0; p <= PRIORITY_MAX; p++ ) {
         const prioritaStat_t *ps = &s->priorita[p];
         if ( ps->completati == 0 ) {
@@ -529,20 +533,20 @@ void statistiche_stampa( const statistiche_t *s, const controllore_t *ctrl, int 
         }
         double media_sistema = (double) ps->somma_tempo_sistema / ps->completati;
         double perc_entro_scadenza_sistema = 100.0 * ps->completati_entro_scadenza_sistema / ps->completati;
-        stampa_dual( f, "  priorita' %2d: completati=%-4ld  tempo SISTEMA(min/media/max)=%d/%.1f/%d  entro scadenza(SISTEMA)=%.0f%%\n",
+        stampa_dual( anche_su_stdout, f, "  priorita' %2d: completati=%-4ld  tempo SISTEMA(min/media/max)=%d/%.1f/%d  entro scadenza(SISTEMA)=%.0f%%\n",
                 p, ps->completati, ps->tempo_sistema_minimo, media_sistema, ps->tempo_sistema_massimo, perc_entro_scadenza_sistema );
         if ( ps->completati_con_scomposizione > 0 ) {
             double media_attesa = (double) ps->somma_tempo_attesa   / ps->completati_con_scomposizione;
             double media_processo = (double) ps->somma_tempo_processo / ps->completati_con_scomposizione;
             double perc_entro_scadenza_processo = 100.0 * ps->completati_entro_scadenza_processo / ps->completati_con_scomposizione;
-            stampa_dual( f, "                 di cui (media): attesa in coda=%.1f + PROCESSO=%.1f = %.1f  |  "
+            stampa_dual( anche_su_stdout, f, "                 di cui (media): attesa in coda=%.1f + PROCESSO=%.1f = %.1f  |  "
                              "PROCESSO(min/max)=%d/%d  entro scadenza(PROCESSO)=%.0f%%\n",
                     media_attesa, media_processo, media_attesa + media_processo,
                     ps->tempo_processo_minimo, ps->tempo_processo_massimo, perc_entro_scadenza_processo );
         }
         totale_completati += ps->completati;
     }
-    stampa_dual( f, "  TOTALE completati (con tempo in sistema registrato): %ld\n", totale_completati );
+    stampa_dual( anche_su_stdout, f, "  TOTALE completati (con tempo in sistema registrato): %ld\n", totale_completati );
 
     if ( f != NULL ) {
         fclose( f );

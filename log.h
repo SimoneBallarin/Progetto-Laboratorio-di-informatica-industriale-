@@ -93,11 +93,18 @@ void log_evento( log_t *l, int step, LogLivello livello, const char *formato, ..
 long log_getContatore( const log_t *l, LogLivello livello );
 
 /**
- * @brief Stampa su stdout un riepilogo del numero di eventi registrati
- *        per ciascun livello. Va chiamata a fine simulazione, come le
+ * @brief Riepilogo del numero di eventi registrati per ciascun livello,
+ *        scritto SEMPRE nel file di log (append in coda, dopo tutti gli
+ *        eventi già registrati) e, se anche_su_stdout è true, anche
+ *        stampato su stdout. Va chiamata a fine simulazione, come le
  *        altre funzioni *_stampa del progetto (es. statistiche_stampa).
  * @param l Puntatore al log.
+ * @param anche_su_stdout Se true, il riepilogo viene anche stampato su
+ *        stdout; se false, va SOLO nel file. Utile per non affollare la
+ *        console quando la stessa funzione viene chiamata più volte
+ *        nello stesso processo (es. il confronto automatico tra due
+ *        strategie in app/main.c, dove solo la prima run stampa a schermo).
  */
-void log_stampaRiepilogo( const log_t *l );
+void log_stampaRiepilogo( const log_t *l, bool anche_su_stdout );
 
 #endif /* LOG_H */

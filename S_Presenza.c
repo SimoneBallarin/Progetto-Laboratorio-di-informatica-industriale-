@@ -1,3 +1,7 @@
+/**
+ * @file S_Presenza.c
+ * @brief Implementazione del sensore di presenza.
+ */
 #include <stdlib.h>
 #include <string.h>
 #include "S_Presenza.h"
@@ -31,13 +35,10 @@ int get_status_presenza(SensorePresenza *s, int time_on, int presenza)
 
     s->letture_totali++;
 
-    /* presente e' vero se il timer di persistenza ha superato la soglia
-     * OPPURE se il segnale diretto di presenza e' attivo.
-     * (era 'presente' non dichiarata nella versione originale: refuso
-     * del parametro 'presenza') */
-     presente = (time_on >= tempo_atteso) || (presenza == 1);
-
-    //presente = presenza ;
+    /* Il sensore segnala PRESENZA_PROLUNGATA solo se il timer di
+     * persistenza ha superato la soglia (tempo_atteso), oppure se il
+     * segnale diretto di presenza e' gia' attivo. */
+    presente = (time_on >= tempo_atteso) || (presenza == 1);
 
     fronte_di_salita  = (presente == 1 && s->status_precedente == 0);
     fronte_di_discesa = (presente == 0 && s->status_precedente == 1);

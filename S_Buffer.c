@@ -1,3 +1,7 @@
+/**
+ * @file S_Buffer.c
+ * @brief Implementazione del sensore di livello buffer.
+ */
 #include <stdlib.h>
 #include <string.h>
 #include "S_Buffer.h"
@@ -24,12 +28,8 @@ int aggiornamento_status(SensoreBuffer *s, int new_object)
 {
     if (s == NULL) return ERR_NULL_PTR;
 
-    /* Nella versione originale qui c'erano due bug identici:
-     *   if (s->livello_attuale = s->livello_massimo)
-     * '=' e' un'ASSEGNAZIONE, non un confronto: questo sovrascriveva
-     * livello_attuale ad ogni chiamata e, essendo l'istruzione
-     * successiva senza graffe, "s->status = FULL;" veniva eseguito
-     * SEMPRE, indipendentemente dal reale livello del buffer. */
+    /* new_object: 1 = e' appena entrato un oggetto, -1 = ne e' appena
+     * uscito uno, 0 = nessuna variazione (solo un aggiornamento di stato). */
     if (new_object == 1 && s->livello_attuale < s->livello_massimo) {
         s->livello_attuale++;
     } else if (new_object == -1 && s->livello_attuale > 0) {

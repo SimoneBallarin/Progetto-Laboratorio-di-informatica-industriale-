@@ -1,9 +1,15 @@
+/**
+ * @file parser.c
+ * @brief Implementazione del parser dei file di configurazione testuali
+ *        (impianto, oggetti, scenario, simulazione).
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "parser.h"
 #include "isp.h"
+#include "machine.h"
 
 #define MAX_LINE_LEN 256
 
@@ -130,12 +136,15 @@ static void gestisci_riga_macchina( cell_t *cell, char *tokens[], int n, int lin
     char id[IDLENGTH] = "";
     int tempo = 0;
     int has_id = 0, has_tempo = 0;
+    double tolleranza = 0.0;
+    int has_tolleranza = 0;
 
     for ( int i = 1; i < n; i++ ) {
         char key[32], value[32];
         if ( !split_key_value( tokens[i], key, value, sizeof( value ) ) ) continue;
         if ( strcmp( key, "ID" ) == 0 ) { strncpy( id, value, IDLENGTH - 1 ); has_id = 1; }
         else if ( strcmp( key, "TEMPO" ) == 0 ) { tempo = atoi( value ); has_tempo = 1; }
+        else if ( strcmp( key, "TOLLERANZA" ) == 0 ) { tolleranza = atof( value ); has_tolleranza = 1; }
     }
     if ( !has_id || !has_tempo ) {
         fprintf( stderr, "[parser riga %d] MACCHINA: campo mancante (ID o TEMPO), riga scartata\n", line_no );
@@ -143,10 +152,18 @@ static void gestisci_riga_macchina( cell_t *cell, char *tokens[], int n, int lin
     }
 
     short int err;
-    if ( cell_addMachine( cell, id, tempo, &err ) == NULL ) {
+    machine_t *m = cell_addMachine( cell, id, tempo, &err );
+    if ( m == NULL ) {
         fprintf( stderr, "[parser riga %d] MACCHINA '%s': errore creazione (codice %d), riga scartata\n",
                  line_no, id, err );
         return;
+    }
+    /* TOLLERANZA e' facoltativo (default 0.02, vedi machine.c): se
+     * assente la macchina resta sul default storico, coerente con il
+     * comportamento pre-esistente per i plant_config che non la usano. */
+    if ( has_tolleranza && machine_setTolleranzaLavorazione( m, tolleranza ) != OP_SUCCESS ) {
+        fprintf( stderr, "[parser riga %d] MACCHINA '%s': TOLLERANZA=%g non valida, mantenuto il default\n",
+                 line_no, id, tolleranza );
     }
     ( *creati )++;
 }
@@ -253,7 +270,8 @@ int parser_costruisciCella( cell_t *cell, const char *path, short int *errCode )
                 } else if ( strcmp( tokens[0], "MOTORE" ) == 0 || strcmp( tokens[0], "DEVIATORE" ) == 0 ) {
             continue; /* gestite da parser_collegaAttuatori, non qui */
         } else if ( strncmp( raw_line, "SIM_", 4 ) == 0 || strncmp( raw_line, "GEN_", 4 ) == 0
-                    || strncmp( raw_line, "SOGLIA_BUFFER=", 14 ) == 0 ) {
+                    || strncmp( raw_line, "SOGLIA_BUFFER=", 14 ) == 0
+                    || strncmp( raw_line, "SCADENZA_STEP=", 14 ) == 0 ) {
             continue; /* gestite da parser_caricaSimulazione, non qui */
         } else if ( strcmp( tokens[0], "INGRESSO" ) == 0 ) {
             continue; /* gestita da parser_collegaSensoriPresenza, non qui */
@@ -400,6 +418,10 @@ int parser_collegaSensoriQualita( controllore_t *ctrl, const char *path, short i
         char id[IDLENGTH] = "";
         int dimx_target = 0, raggio_target = 0;
         int has_id = 0;
+        int tolleranza_conforme = 0, tolleranza_rivalutazione = 0;
+        int has_tolleranza_conforme = 0, has_tolleranza_rivalutazione = 0;
+        char smistamento_str[32] = "";
+        int has_smistamento = 0;
 
         for ( int i = 1; i < n; i++ ) {
             char key[32], value[32];
@@ -407,6 +429,9 @@ int parser_collegaSensoriQualita( controllore_t *ctrl, const char *path, short i
             if ( strcmp( key, "ID" ) == 0 ) { strncpy( id, value, IDLENGTH - 1 ); has_id = 1; }
             else if ( strcmp( key, "DIMX_TARGET" ) == 0 ) { dimx_target = atoi( value ); }
             else if ( strcmp( key, "RAGGIO_TARGET" ) == 0 ) { raggio_target = atoi( value ); }
+            else if ( strcmp( key, "TOLLERANZA_CONFORME" ) == 0 ) { tolleranza_conforme = atoi( value ); has_tolleranza_conforme = 1; }
+            else if ( strcmp( key, "TOLLERANZA_RIVALUTAZIONE" ) == 0 ) { tolleranza_rivalutazione = atoi( value ); has_tolleranza_rivalutazione = 1; }
+            else if ( strcmp( key, "SMISTAMENTO" ) == 0 ) { strncpy( smistamento_str, value, sizeof( smistamento_str ) - 1 ); has_smistamento = 1; }
         }
         if ( !has_id ) continue;
 
@@ -420,6 +445,52 @@ int parser_collegaSensoriQualita( controllore_t *ctrl, const char *path, short i
                      line_no, id, err );
             continue;
         }
+        /* TOLLERANZA_CONFORME/TOLLERANZA_RIVALUTAZIONE sono facoltativi
+         * (default 5%/10%, vedi S_Qualita.c): se assenti l'ISP resta sul
+         * default storico. Vanno indicati ENTRAMBI o nessuno dei due:
+         * un solo valore lascerebbe l'altra soglia al default, con un
+         * rischio concreto di violare il vincolo "rivalutazione >=
+         * conforme" (es. TOLLERANZA_CONFORME=15 da solo, con
+         * RIVALUTAZIONE rimasta al default 10, sarebbe silenziosamente
+         * incoerente). */
+        if ( has_tolleranza_conforme != has_tolleranza_rivalutazione ) {
+            fprintf( stderr, "[parser riga %d] ISP '%s': TOLLERANZA_CONFORME e TOLLERANZA_RIVALUTAZIONE "
+                     "vanno specificate entrambe o nessuna delle due, mantenuto il default\n", line_no, id );
+        } else if ( has_tolleranza_conforme ) {
+            short int errTolleranza = controllore_impostaToleranzaQualita( ctrl, id, tolleranza_conforme, tolleranza_rivalutazione );
+            if ( errTolleranza != OP_SUCCESS ) {
+                fprintf( stderr, "[parser riga %d] ISP '%s': TOLLERANZA_CONFORME/RIVALUTAZIONE non valide "
+                         "(codice %d), mantenuto il default\n", line_no, id, errTolleranza );
+            }
+        }
+
+        /* SMISTAMENTO e' facoltativo (default SMISTAMENTO_AUTO, vedi
+         * Controllore.h): se assente, il criterio viene dedotto dal
+         * numero di uscite collegate via CONNECT (comportamento
+         * storico). Un valore non riconosciuto viene segnalato e
+         * ignorato, senza scartare la riga (l'ISP resta comunque
+         * collegata, solo sul criterio di default). */
+        if ( has_smistamento ) {
+            tipo_smistamento_t tipo;
+            short int erroreValoreSconosciuto = 0;
+
+            if ( strcmp( smistamento_str, "PASSACARTE" ) == 0 ) { tipo = SMISTAMENTO_PASSACARTE; }
+            else if ( strcmp( smistamento_str, "MATERIALE" ) == 0 ) { tipo = SMISTAMENTO_MATERIALE; }
+            else if ( strcmp( smistamento_str, "QUALITA" ) == 0 ) { tipo = SMISTAMENTO_QUALITA; }
+            else if ( strcmp( smistamento_str, "ENTRAMBI" ) == 0 ) { tipo = SMISTAMENTO_MATERIALE_E_QUALITA; }
+            else if ( strcmp( smistamento_str, "AUTO" ) == 0 ) { tipo = SMISTAMENTO_AUTO; }
+            else {
+                tipo = SMISTAMENTO_AUTO;
+                erroreValoreSconosciuto = 1;
+                fprintf( stderr, "[parser riga %d] ISP '%s': SMISTAMENTO='%s' non riconosciuto "
+                         "(atteso PASSACARTE/MATERIALE/QUALITA/ENTRAMBI/AUTO), mantenuto AUTO\n",
+                         line_no, id, smistamento_str );
+            }
+            if ( !erroreValoreSconosciuto ) {
+                controllore_impostaSmistamentoQualita( ctrl, id, tipo );
+            }
+        }
+
         collegati++;
     }
 
@@ -520,11 +591,9 @@ int parser_caricaOggetti( cell_t *cell, controllore_t *ctrl, const char *path,
         }
 
         short int err;
-        /* stepCreation = arrival: adesso e' corretto farlo coincidere,
-         * perche' l'oggetto verra' DAVVERO inserito nel buffer a quello
-         * step (vedi controllore_schedulaArrivo sotto), non prima come
-         * succedeva con l'inserimento immediato della versione
-         * precedente di questa funzione. */
+        /* stepCreation = arrival: l'oggetto e' considerato "creato" allo
+         * stesso step in cui verra' davvero inserito nel buffer (vedi
+         * controllore_schedulaArrivo sotto), non prima. */
         object_t *obj = object_create( id_str, priority, type, arrival, dimensionX, raggio, &err );
         if ( obj == NULL ) {
             fprintf( stderr, "[parser riga %d] oggetto '%s': errore creazione (codice %d), riga scartata\n",
@@ -535,11 +604,9 @@ int parser_caricaOggetti( cell_t *cell, controllore_t *ctrl, const char *path,
         /* controllore_schedulaArrivo (non buffer_insertObject diretto):
          * inserisce l'oggetto nel buffer SOLO quando la simulazione
          * raggiunge arrival_step, aggiornando correttamente anche
-         * l'eventuale SensoreBuffer agganciato (un inserimento diretto
-         * lo lascerebbe permanentemente disallineato dal reale livello
-         * del buffer - bug della versione precedente di questa
-         * funzione, corretto insieme all'introduzione di questo
-         * meccanismo). */
+         * l'eventuale SensoreBuffer agganciato - un inserimento diretto
+         * qui lo lascerebbe permanentemente disallineato dal reale
+         * livello del buffer. */
         err = controllore_schedulaArrivo( ctrl, bufferIngressoID, obj, arrival );
         if ( err != OP_SUCCESS ) {
             fprintf( stderr, "[parser riga %d] oggetto '%s': errore schedulazione arrivo (codice %d), riga scartata\n",
@@ -689,6 +756,7 @@ int parser_caricaSimulazione( const char *path, SimulationConfig *out, short int
     out->gen_target_dimensionX = 100.0;
     out->gen_target_raggio     = 10.0;
     out->gen_errore_pct        = 2;
+    out->scadenza_step         = 40;  /* default storico, prima hardcoded in app/main.c */
 
     FILE *f = fopen( path, "r" );
     if ( f == NULL ) {
@@ -722,6 +790,8 @@ int parser_caricaSimulazione( const char *path, SimulationConfig *out, short int
             out->gen_target_raggio = atof( value );
         } else if ( strcmp( key, "GEN_ERRORE_PCT" ) == 0 ) {
             out->gen_errore_pct = atoi( value );
+        } else if ( strcmp( key, "SCADENZA_STEP" ) == 0 ) {
+            out->scadenza_step = atoi( value );
         }
     }
 

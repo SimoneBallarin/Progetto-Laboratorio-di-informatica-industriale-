@@ -1,3 +1,7 @@
+/**
+ * @file Deviatore.c
+ * @brief Implementazione dell'attuatore deviatore.
+ */
 #include <string.h>
 #include "Deviatore.h"
 #include "errors.h"
