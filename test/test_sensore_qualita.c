@@ -184,6 +184,56 @@ void test_get_Material_su_null_non_crasha( void )
     object_delete( obj );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Tolleranze di classificazione (CONFORME/RIVALUTAZIONE/SCARTO)      */
+/*  configurabili: vedi sensore_qualita_imposta_tolleranze e la nuova  */
+/*  possibilita' di impostarle da plant_config (TOLLERANZA_CONFORME/   */
+/*  TOLLERANZA_RIVALUTAZIONE sulla riga ISP).                          */
+/* ------------------------------------------------------------------ */
+
+void test_imposta_tolleranze_valori_validi( void )
+{
+    TEST_ASSERT_EQUAL_INT( OP_SUCCESS, sensore_qualita_imposta_tolleranze( &g_sensore, 3, 8 ) );
+}
+
+void test_imposta_tolleranze_rivalutazione_minore_di_conforme_fallisce( void )
+{
+    /* RIVALUTAZIONE deve restare >= CONFORME (vedi get_qualita: prima
+     * si controlla CONFORME, poi RIVALUTAZIONE): altrimenti nessun
+     * pezzo potrebbe mai risultare RIVALUTAZIONE. */
+    TEST_ASSERT_EQUAL_INT( ERR_OUT_OF_RANGE, sensore_qualita_imposta_tolleranze( &g_sensore, 10, 5 ) );
+}
+
+void test_imposta_tolleranze_valori_non_positivi_falliscono( void )
+{
+    TEST_ASSERT_EQUAL_INT( ERR_OUT_OF_RANGE, sensore_qualita_imposta_tolleranze( &g_sensore, 0, 10 ) );
+    TEST_ASSERT_EQUAL_INT( ERR_OUT_OF_RANGE, sensore_qualita_imposta_tolleranze( &g_sensore, 5, 0 ) );
+    TEST_ASSERT_EQUAL_INT( ERR_OUT_OF_RANGE, sensore_qualita_imposta_tolleranze( &g_sensore, -1, 10 ) );
+}
+
+void test_imposta_tolleranze_su_null_restituisce_errore( void )
+{
+    TEST_ASSERT_EQUAL_INT( ERR_NULL_PTR, sensore_qualita_imposta_tolleranze( NULL, 5, 10 ) );
+}
+
+void test_get_qualita_rispetta_tolleranze_strette( void )
+{
+    /* Target 100/10 (vedi setUp): un pezzo scostato del 6% sarebbe
+     * CONFORME col default (tolleranza 5%/10%: 6% < 10 -> RIVALUTAZIONE)
+     * ma con una tolleranza CONFORME piu' larga (7%) deve risultare
+     * CONFORME; ristretta a 3%/4%, lo stesso pezzo deve risultare
+     * SCARTO (6% supera anche la soglia RIVALUTAZIONE=4%). */
+    object_t *obj = crea_oggetto( 'A', 106.0, 10.6 );  /* +6% su entrambi */
+
+    sensore_qualita_imposta_tolleranze( &g_sensore, 7, 10 );
+    TEST_ASSERT_EQUAL_INT( CONFORME, get_qualita( &g_sensore, &g_guasto, 0, obj, true ) );
+
+    sensore_qualita_imposta_tolleranze( &g_sensore, 3, 4 );
+    TEST_ASSERT_EQUAL_INT( SCARTO, get_qualita( &g_sensore, &g_guasto, 1, obj, true ) );
+
+    object_delete( obj );
+}
+
 int main( void )
 {
     UNITY_BEGIN();
@@ -198,6 +248,12 @@ int main( void )
     RUN_TEST( test_get_Material_non_instrada_piu_nel_materiale_opposto );
 
     RUN_TEST( test_get_Material_su_null_non_crasha );
+
+    RUN_TEST( test_imposta_tolleranze_valori_validi );
+    RUN_TEST( test_imposta_tolleranze_rivalutazione_minore_di_conforme_fallisce );
+    RUN_TEST( test_imposta_tolleranze_valori_non_positivi_falliscono );
+    RUN_TEST( test_imposta_tolleranze_su_null_restituisce_errore );
+    RUN_TEST( test_get_qualita_rispetta_tolleranze_strette );
 
     return UNITY_END();
 }

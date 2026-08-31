@@ -16,12 +16,21 @@
  * setUp/tearDown.
  */
 
+/* Necessaria PRIMA di ogni altro #include: con -std=c11 stretto (vedi
+ * build.sh/CMakeLists.txt), fileno/dup/dup2 (usate sotto per catturare
+ * temporaneamente stdout) sono estensioni POSIX nascoste di default. */
+#define _POSIX_C_SOURCE 200809L
+
 #include "unity.h"
 #include "statistiche.h"
 #include "object.h"
 #include "cell.h"
 #include "Controllore.h"
 #include "errors.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 static cell_t *g_cell;
 static controllore_t *g_ctrl;
@@ -202,6 +211,89 @@ void test_getRiepilogo_su_null_restituisce_errore( void )
     statistiche_destroy( s );
 }
 
+/* ------------------------------------------------------------------ */
+/*  statistiche_stampa: anche_su_stdout scrive sempre su file, ma su   */
+/*  stdout solo se richiesto (test di regressione: vedi bug corretto   */
+/*  "riepilogo stampato due volte" nel README, causato da app/main.c   */
+/*  che chiamava questa funzione due volte, una per strategia, senza   */
+/*  nessun modo di sopprimere la stampa a schermo della seconda run)   */
+/* ------------------------------------------------------------------ */
+
+/* Legge l'intero contenuto di un file in un buffer allocato con
+ * malloc (il chiamante deve fare free). Ritorna NULL se il file non
+ * esiste o e' vuoto. */
+static char *leggi_intero_file( const char *path )
+{
+    FILE *f = fopen( path, "r" );
+    if ( f == NULL ) { return NULL; }
+
+    fseek( f, 0, SEEK_END );
+    long size = ftell( f );
+    fseek( f, 0, SEEK_SET );
+    if ( size <= 0 ) { fclose( f ); return NULL; }
+
+    char *buf = malloc( (size_t) size + 1 );
+    size_t letti = fread( buf, 1, (size_t) size, f );
+    buf[letti] = '\0';
+    fclose( f );
+    return buf;
+}
+
+void test_statistiche_stampa_scrive_sempre_su_file( void )
+{
+    /* anche_su_stdout=false: il file deve comunque contenere il
+     * riepilogo completo (solo la console va soppressa, non il file -
+     * altrimenti i dati della run andrebbero persi, non solo non
+     * stampati). */
+    const char *path = "test_stampa_no_stdout.tmp";
+    short int err;
+    statistiche_t *s = statistiche_create( &err );
+
+    statistiche_stampa( s, g_ctrl, 100, path, false );
+
+    char *contenuto = leggi_intero_file( path );
+    TEST_ASSERT_NOT_NULL( contenuto );
+    TEST_ASSERT_NOT_NULL( strstr( contenuto, "=== STATISTICHE ===" ) );
+
+    free( contenuto );
+    remove( path );
+    statistiche_destroy( s );
+}
+
+void test_statistiche_stampa_con_anche_su_stdout_scrive_anche_su_stdout( void )
+{
+    /* Cattura stdout (via dup/dup2, cosi' la destinazione originale si
+     * puo' ripristinare esattamente anche se non c'e' un terminale
+     * reale, es. in CI) per verificare che anche_su_stdout=true produca
+     * EFFETTIVAMENTE output a schermo (non solo che non crashi): senza
+     * questo controllo, un futuro refactor potrebbe rompere
+     * silenziosamente il ramo "true". */
+    const char *stdout_path = "test_stampa_stdout_catturato.tmp";
+    short int err;
+    statistiche_t *s = statistiche_create( &err );
+
+    fflush( stdout );
+    int fd_originale = dup( fileno( stdout ) );
+    TEST_ASSERT_TRUE( fd_originale >= 0 );
+    FILE *catturato_stream = freopen( stdout_path, "w", stdout );
+    TEST_ASSERT_NOT_NULL( catturato_stream );
+
+    statistiche_stampa( s, g_ctrl, 100, NULL, true );
+
+    fflush( stdout );
+    dup2( fd_originale, fileno( stdout ) );
+    close( fd_originale );
+    clearerr( stdout );
+
+    char *catturato = leggi_intero_file( stdout_path );
+    TEST_ASSERT_NOT_NULL( catturato );
+    TEST_ASSERT_NOT_NULL( strstr( catturato, "=== STATISTICHE ===" ) );
+
+    free( catturato );
+    remove( stdout_path );
+    statistiche_destroy( s );
+}
+
 int main( void )
 {
     UNITY_BEGIN();
@@ -216,6 +308,9 @@ int main( void )
     RUN_TEST( test_registraBlocco_incrementa_il_totale );
 
     RUN_TEST( test_getRiepilogo_su_null_restituisce_errore );
+
+    RUN_TEST( test_statistiche_stampa_scrive_sempre_su_file );
+    RUN_TEST( test_statistiche_stampa_con_anche_su_stdout_scrive_anche_su_stdout );
 
     return UNITY_END();
 }

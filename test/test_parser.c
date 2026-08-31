@@ -175,10 +175,33 @@ void test_caricaSimulazione_SIM_PEZZI_B2_letto_correttamente( void )
     SimulationConfig sim;
     short int err;
 
-    int letto = parser_caricaSimulazione( "lib/parser/plant_config_valid.txt", &sim, &err );
+    int letto = parser_caricaSimulazione( "lib/parser/plant_config_layout1.txt", &sim, &err );
 
     TEST_ASSERT_EQUAL_INT( 1, letto );
     TEST_ASSERT_EQUAL_INT( 0, sim.n_pezzi_prova_b2 );  /* valore attuale nel file di produzione */
+}
+
+void test_caricaSimulazione_SCADENZA_STEP_default_40( void )
+{
+    /* config_valida.txt non ha SCADENZA_STEP: il default storico (40)
+     * deve valere, non lasciare il campo indefinito. */
+    SimulationConfig sim;
+    short int err;
+
+    parser_caricaSimulazione( FIX "config_valida.txt", &sim, &err );
+
+    TEST_ASSERT_EQUAL_INT( 40, sim.scadenza_step );
+}
+
+void test_caricaSimulazione_SCADENZA_STEP_letta_correttamente( void )
+{
+    SimulationConfig sim;
+    short int err;
+
+    int letto = parser_caricaSimulazione( "lib/parser/plant_config_layout1.txt", &sim, &err );
+
+    TEST_ASSERT_EQUAL_INT( 1, letto );
+    TEST_ASSERT_EQUAL_INT( 40, sim.scadenza_step );  /* valore attuale nel file di produzione */
 }
 
 /* ------------------------------------------------------------------ */
@@ -226,9 +249,9 @@ void test_caricaScenario_guasto_singolo( void )
 
     /* Uso uno scenario "vero" del progetto (non una fixture dedicata):
      * verifica anche che il formato a singola ISP, usato in produzione
-     * da scenario_nominale.txt/scenario_difficile.txt, resti valido
+     * da scenario_nominale_layout1.txt/scenario_difficile_layout1.txt, resti valido
      * dopo l'estensione a lista (vedi ScenarioConfig in parser.h). */
-    int letto = parser_caricaScenario( "lib/parser/scenario_difficile.txt", &scenario, &err );
+    int letto = parser_caricaScenario( "lib/parser/scenario_difficile_layout1.txt", &scenario, &err );
 
     TEST_ASSERT_EQUAL_INT( 1, letto );
     TEST_ASSERT_TRUE( scenario.guasto_abilitato );
@@ -442,6 +465,9 @@ int main( void )
     RUN_TEST( test_caricaSimulazione_ignora_righe_di_commento );
     RUN_TEST( test_caricaSimulazione_SIM_PEZZI_B2_default_zero );
     RUN_TEST( test_caricaSimulazione_SIM_PEZZI_B2_letto_correttamente );
+
+    RUN_TEST( test_caricaSimulazione_SCADENZA_STEP_default_40 );
+    RUN_TEST( test_caricaSimulazione_SCADENZA_STEP_letta_correttamente );
 
     RUN_TEST( test_caricaScenario_guasto_singolo );
     RUN_TEST( test_caricaScenario_guasto_su_piu_isp );

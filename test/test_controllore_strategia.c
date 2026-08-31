@@ -4,7 +4,7 @@
  *        STRATEGIA_PRIORITA_BUFFER_AWARE e STRATEGIA_FCFS producano
  *        davvero un ordine di smaltimento diverso, su una mini-cella
  *        B1 -> B2 costruita ad hoc (non l'impianto completo di
- *        plant_config_valid.txt, per tenere il test isolato e veloce).
+ *        plant_config_layout1.txt, per tenere il test isolato e veloce).
  *
  * A differenza di test_buffer.c (che testa buffer_insertObject/
  * buffer_removeObject direttamente), questo file verifica che
