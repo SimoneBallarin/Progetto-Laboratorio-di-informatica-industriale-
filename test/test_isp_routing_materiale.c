@@ -36,7 +36,7 @@ void setUp( void )
     cell_addBuffer( g_cell, "B1", 5, &err );
     cell_addISP( g_cell, "ISP1", 1, &err );   /* tempo_controllo = 1 passo */
     /* 4 uscite, STESSO ORDINE della convenzione di produzione (vedi
-     * plant_config_valid.txt per ISP2): 0=materiale A, 1=RIVALUTAZIONE/
+     * plant_config_layout1.txt per ISP2): 0=materiale A, 1=RIVALUTAZIONE/
      * non_classificato, 2=SCARTO, 3=materiale B. */
     cell_addBuffer( g_cell, "OUT_A", 5, &err );
     cell_addBuffer( g_cell, "OUT_RIVAL", 5, &err );

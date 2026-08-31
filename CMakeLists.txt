@@ -9,13 +9,12 @@ Uso:
     ctest --test-dir build_cmake --output-on-failure
     # lancia tutti i test Unity registrati sotto test/ (equivalente a test/run_tests.sh)
 
-Struttura del progetto: un modulo per cartella sotto lib/, ciascuno con la
-coppia include/ (o cartella diretta, per i moduli piu' vecchi come Controllore/
-Statistiche/parser/Log/Errori/Macchina/ISP) + src/ o scr/ (refuso storico in
-alcuni moduli, mantenuto per non rinominare file gia' committati). Alcune
-cartelle contengono spazi nel nome ("Nastro Trasportare", "Sensore Buffer",
-"Sensore di Prossimita", "Sensore Qualita"): CMake li gestisce senza problemi
-purche' passati come stringhe quotate, mai come glob non quotati.
+Struttura del progetto: un modulo per cartella sotto lib/, con .h e .c
+direttamente nella cartella del modulo (nessuna sottocartella include/src).
+Alcune cartelle contengono spazi nel nome ("Nastro Trasportare", "Sensore
+Buffer", "Sensore di Prossimita", "Sensore Qualita"): CMake li gestisce
+senza problemi purche' passati come stringhe quotate, mai come glob non
+quotati.
 #]]
 
 cmake_minimum_required(VERSION 3.16)
@@ -40,19 +39,19 @@ add_compile_options(-Wall -Wextra)
 # ------------------------------------------------------------------
 
 set(LIB_SOURCES
-    lib/Oggetto/src/object.c
-    lib/IDlist/scr/idlist.c
-    lib/Registro/scr/registry.c
-    lib/Buffer/src/buffer.c
-    lib/Cella/src/cell.c
-    "lib/Nastro Trasportare/src/nastro.c"
+    lib/Oggetto/object.c
+    lib/IDlist/idlist.c
+    lib/Registro/registry.c
+    lib/Buffer/buffer.c
+    lib/Cella/cell.c
+    "lib/Nastro Trasportare/nastro.c"
     lib/Macchina/machine.c
     lib/ISP/isp.c
-    lib/Attuatori/Motori/scr/Motore.c
-    lib/Attuatori/Servo/scr/Deviatore.c
-    "lib/Sensori/Sensore di Prossimita/src/S_Presenza.c"
-    "lib/Sensori/Sensore Buffer/src/S_Buffer.c"
-    "lib/Sensori/Sensore Qualita/src/S_Qualita.c"
+    lib/Attuatori/Motori/Motore.c
+    lib/Attuatori/Servo/Deviatore.c
+    "lib/Sensori/Sensore di Prossimita/S_Presenza.c"
+    "lib/Sensori/Sensore Buffer/S_Buffer.c"
+    "lib/Sensori/Sensore Qualita/S_Qualita.c"
     lib/Controllore/Controllore.c
     lib/parser/parser.c
     lib/Statistiche/statistiche.c
@@ -61,19 +60,19 @@ set(LIB_SOURCES
 
 set(LIB_INCLUDE_DIRS
     lib/Errori
-    lib/Oggetto/include
-    lib/IDlist/include
-    lib/Registro/include
-    lib/Buffer/include
-    lib/Cella/include
-    "lib/Nastro Trasportare/include"
+    lib/Oggetto
+    lib/IDlist
+    lib/Registro
+    lib/Buffer
+    lib/Cella
+    "lib/Nastro Trasportare"
     lib/Macchina
     lib/ISP
-    lib/Attuatori/Motori/include
-    lib/Attuatori/Servo/include
-    "lib/Sensori/Sensore di Prossimita/include"
-    "lib/Sensori/Sensore Buffer/include"
-    "lib/Sensori/Sensore Qualita/include"
+    lib/Attuatori/Motori
+    lib/Attuatori/Servo
+    "lib/Sensori/Sensore di Prossimita"
+    "lib/Sensori/Sensore Buffer"
+    "lib/Sensori/Sensore Qualita"
     lib/Controllore
     lib/parser
     lib/Statistiche
@@ -116,7 +115,7 @@ foreach(TEST_SRC ${UNITY_TEST_SOURCES})
     target_link_libraries(${TEST_NAME} PRIVATE unity cella_lib)
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     # I test leggono file con percorsi RELATIVI (es. "test/fixtures/...",
-    # "lib/parser/scenario_difficile.txt"), assumendo di essere lanciati
+    # "lib/parser/scenario_difficile_layout1.txt"), assumendo di essere lanciati
     # dalla root del progetto - stessa convenzione di test/run_tests.sh.
     # CTest di default lancia ogni eseguibile con cwd = cartella di
     # build, non la root: senza questa property, i test che aprono file

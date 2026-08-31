@@ -11,16 +11,16 @@
 set -u
 
 INCLUDES="-Itest/unity \
-  -Ilib/Errori -Ilib/Oggetto/include -Ilib/IDlist/include -Ilib/Registro/include -Ilib/Buffer/include \
-  -Ilib/Cella/include -I\"lib/Nastro Trasportare/include\" -Ilib/Macchina -Ilib/ISP \
-  -Ilib/Attuatori/Motori/include -Ilib/Attuatori/Servo/include \
-  -I\"lib/Sensori/Sensore di Prossimita/include\" -I\"lib/Sensori/Sensore Buffer/include\" -I\"lib/Sensori/Sensore Qualita/include\" \
+  -Ilib/Errori -Ilib/Oggetto -Ilib/IDlist -Ilib/Registro -Ilib/Buffer \
+  -Ilib/Cella -I\"lib/Nastro Trasportare\" -Ilib/Macchina -Ilib/ISP \
+  -Ilib/Attuatori/Motori -Ilib/Attuatori/Servo \
+  -I\"lib/Sensori/Sensore di Prossimita\" -I\"lib/Sensori/Sensore Buffer\" -I\"lib/Sensori/Sensore Qualita\" \
   -Ilib/Controllore -Ilib/parser -Ilib/Statistiche -Ilib/Log"
 
-SRCS_COMUNI="lib/Oggetto/src/object.c lib/IDlist/scr/idlist.c lib/Registro/scr/registry.c lib/Buffer/src/buffer.c \
-  lib/Cella/src/cell.c \"lib/Nastro Trasportare/src/nastro.c\" lib/Macchina/machine.c lib/ISP/isp.c \
-  lib/Attuatori/Motori/scr/Motore.c lib/Attuatori/Servo/scr/Deviatore.c \
-  \"lib/Sensori/Sensore di Prossimita/src/S_Presenza.c\" \"lib/Sensori/Sensore Buffer/src/S_Buffer.c\" \"lib/Sensori/Sensore Qualita/src/S_Qualita.c\" \
+SRCS_COMUNI="lib/Oggetto/object.c lib/IDlist/idlist.c lib/Registro/registry.c lib/Buffer/buffer.c \
+  lib/Cella/cell.c \"lib/Nastro Trasportare/nastro.c\" lib/Macchina/machine.c lib/ISP/isp.c \
+  lib/Attuatori/Motori/Motore.c lib/Attuatori/Servo/Deviatore.c \
+  \"lib/Sensori/Sensore di Prossimita/S_Presenza.c\" \"lib/Sensori/Sensore Buffer/S_Buffer.c\" \"lib/Sensori/Sensore Qualita/S_Qualita.c\" \
   lib/Controllore/Controllore.c lib/Statistiche/statistiche.c lib/Log/log.c lib/parser/parser.c"
 
 mkdir -p test/build

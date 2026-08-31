@@ -158,6 +158,54 @@ void test_schedulaArrivo_su_null_restituisce_errore( void )
     object_delete( obj );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Stesso arrival_step: l'ordine di ammissione rispetta l'ordine di    */
+/*  schedulazione (FIFO), non lo inverte                                */
+/* ------------------------------------------------------------------ */
+
+void test_stesso_arrival_step_ammette_nell_ordine_di_schedulazione( void )
+{
+    /* Bug reale trovato e corretto: la coda interna inseriva in TESTA
+     * (LIFO), quindi tra due arrivi con lo STESSO arrival_step (caso
+     * comune: piu' righe con ARRIVAL_STEP=0 nello stesso file oggetti)
+     * l'ultimo schedulato veniva ammesso PER PRIMO, invertendo
+     * silenziosamente l'ordine scritto nel file - irrilevante per la
+     * Strategia 1 (la priorita' vince comunque), ma decisivo per la
+     * Strategia 2/FCFS, dove l'ordine di ammissione in B1 e' l'UNICA
+     * cosa che decide chi esce prima. */
+    short int err;
+    object_t *primo  = object_create( "PRIMO", 5, 'A', 0, 100.0, 10.0, &err );
+    object_t *secondo = object_create( "SECONDO", 5, 'A', 0, 100.0, 10.0, &err );
+    object_t *terzo  = object_create( "TERZO", 5, 'A', 0, 100.0, 10.0, &err );
+
+    /* Schedulati nell'ordine primo, secondo, terzo - stesso arrival_step
+     * per tutti e tre, come piu' righe consecutive di un file oggetti. */
+    controllore_schedulaArrivo( g_ctrl, "B1", primo, 5 );
+    controllore_schedulaArrivo( g_ctrl, "B1", secondo, 5 );
+    controllore_schedulaArrivo( g_ctrl, "B1", terzo, 5 );
+
+    int step;
+    for ( step = 0; step <= 5; step++ ) {
+        controllore_step( g_ctrl, step );
+    }
+
+    /* B1 usa priority=true per default (Strategia 1), ma qui tutti e tre
+     * hanno la STESSA priorita' (5): a parita' di priorita',
+     * buffer_insertObject mantiene l'ordine di inserimento (vedi
+     * test_buffer.c: test_buffer_priorita_parita_mantiene_ordine_di_arrivo),
+     * quindi l'head del buffer rivela direttamente l'ordine in cui sono
+     * stati AMMESSI - che deve coincidere con l'ordine di schedulazione. */
+    bufferObj_t *cur = cell_getBuffer( g_cell, "B1" )->head;
+    TEST_ASSERT_NOT_NULL( cur );
+    TEST_ASSERT_EQUAL_STRING( "PRIMO", object_getID( cur->dato ) );
+    cur = cur->next;
+    TEST_ASSERT_NOT_NULL( cur );
+    TEST_ASSERT_EQUAL_STRING( "SECONDO", object_getID( cur->dato ) );
+    cur = cur->next;
+    TEST_ASSERT_NOT_NULL( cur );
+    TEST_ASSERT_EQUAL_STRING( "TERZO", object_getID( cur->dato ) );
+}
+
 int main( void )
 {
     UNITY_BEGIN();
@@ -170,6 +218,7 @@ int main( void )
     RUN_TEST( test_arrivo_mai_raggiunto_non_fa_leak_su_destroy );
 
     RUN_TEST( test_schedulaArrivo_su_null_restituisce_errore );
+    RUN_TEST( test_stesso_arrival_step_ammette_nell_ordine_di_schedulazione );
 
     return UNITY_END();
 }

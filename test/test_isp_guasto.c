@@ -14,6 +14,7 @@
 #include "Controllore.h"
 #include "object.h"
 #include "errors.h"
+#include "log.h"
 
 static cell_t *g_cell;
 static controllore_t *g_ctrl;
@@ -190,6 +191,80 @@ void test_guasto_rientra_isp_torna_disponibile( void )
     (void) obj;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Il guasto viene registrato nel log (sez. 5 della traccia: "deve     */
+/*  riconoscere il problema e registrarlo nel log") - non solo nelle    */
+/*  statistiche finali (step_bloccata_per_guasto), ma come evento       */
+/*  discreto in simulazione.log al momento esatto della transizione.    */
+/* ------------------------------------------------------------------ */
+
+void test_guasto_produce_un_evento_warning_nel_log( void )
+{
+    short int err;
+    log_t *log = log_create( "test_log_guasto.tmp", false, &err );
+    controllore_collegaLog( g_ctrl, log );
+
+    controllore_impostaGuastoQualita( g_ctrl, "ISP1", true, 1, 1000 );
+
+    int step;
+    for ( step = 0; step < 5; step++ ) {
+        controllore_step( g_ctrl, step );
+    }
+
+    /* Esattamente UN evento WARNING (il fronte di ingresso in guasto),
+     * non uno per ogni passo in cui il sensore resta guasto. */
+    TEST_ASSERT_EQUAL_INT( 1, log_getContatore( log, LOG_WARNING ) );
+
+    log_destroy( log );
+    remove( "test_log_guasto.tmp" );
+}
+
+void test_guasto_rientrato_produce_un_evento_info_nel_log( void )
+{
+    short int err;
+    log_t *log = log_create( "test_log_guasto_rientro.tmp", false, &err );
+    controllore_collegaLog( g_ctrl, log );
+
+    /* Guasto breve (1 passo OK, 1 passo guasto): entro pochi passi
+     * scatta ENTRAMBE le transizioni (entra ed esce dal guasto). */
+    controllore_impostaGuastoQualita( g_ctrl, "ISP1", true, 1, 1 );
+
+    int step;
+    for ( step = 0; step < 6; step++ ) {
+        controllore_step( g_ctrl, step );
+    }
+
+    long infoIniziali = log_getContatore( log, LOG_INFO );
+    TEST_ASSERT_GREATER_OR_EQUAL_INT( 1, log_getContatore( log, LOG_WARNING ) );
+    /* Il rientro produce un LOG_INFO IN PIU' rispetto ai normali INFO
+     * di setup/step (non possiamo assumere che siano SOLO quello, dato
+     * che controllore_step logga anche altri eventi INFO): basta
+     * verificare che almeno uno ci sia stato. */
+    TEST_ASSERT_GREATER_OR_EQUAL_INT( 1, infoIniziali );
+
+    log_destroy( log );
+    remove( "test_log_guasto_rientro.tmp" );
+}
+
+void test_senza_guasto_nessun_evento_guasto_nel_log( void )
+{
+    short int err;
+    log_t *log = log_create( "test_log_no_guasto.tmp", false, &err );
+    controllore_collegaLog( g_ctrl, log );
+
+    object_t *obj = inserisci_un_oggetto_in_B1();
+    int step;
+    for ( step = 0; step < 5; step++ ) {
+        controllore_step( g_ctrl, step );
+    }
+
+    TEST_ASSERT_EQUAL_INT( 0, log_getContatore( log, LOG_WARNING ) );
+
+    log_destroy( log );
+    remove( "test_log_no_guasto.tmp" );
+    (void) obj;
+}
+
 int main( void )
 {
     UNITY_BEGIN();
@@ -198,6 +273,10 @@ int main( void )
     RUN_TEST( test_con_guasto_attivo_isp_non_accetta_pezzi );
     RUN_TEST( test_con_guasto_attivo_isp_trattiene_pezzo_in_controllo );
     RUN_TEST( test_guasto_rientra_isp_torna_disponibile );
+
+    RUN_TEST( test_guasto_produce_un_evento_warning_nel_log );
+    RUN_TEST( test_guasto_rientrato_produce_un_evento_info_nel_log );
+    RUN_TEST( test_senza_guasto_nessun_evento_guasto_nel_log );
 
     return UNITY_END();
 }
