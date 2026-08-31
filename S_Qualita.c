@@ -1,3 +1,7 @@
+/**
+ * @file S_Qualita.c
+ * @brief Implementazione del sensore di qualita'.
+ */
 #include <stdlib.h>
 #include <string.h>
 #include "S_Qualita.h"
@@ -27,7 +31,13 @@ int sensore_qualita_init(SensoreQualita *s, const char *ID,
     s->B = 0;
     s->non_classificato = 0;
     for(int i =0 ; i<3; i++){s->type_letture_totali[i] = 0;}
-    
+
+    /* Default storici, modificabili con sensore_qualita_imposta_tolleranze
+     * (o via TOLLERANZA_CONFORME/TOLLERANZA_RIVALUTAZIONE nel plant_config,
+     * vedi parser_collegaSensoriQualita). */
+    s->tolleranza_conforme_pct = 5;
+    s->tolleranza_rivalutazione_pct = 10;
+
     m->last_lettura = 0;
     m->time_since_last_change = 0;
     m->is_malfunzionante = false;
@@ -46,6 +56,21 @@ int sensore_qualita_imposta_guasto(MalfunzionamentoSensore *m, int time_error, i
 
     m->time_error = time_error;
     m->time_ok = time_ok;
+    return OP_SUCCESS;
+}
+
+int sensore_qualita_imposta_tolleranze(SensoreQualita *s, int tolleranza_conforme_pct, int tolleranza_rivalutazione_pct)
+{
+    if (s == NULL) return ERR_NULL_PTR;
+    if (tolleranza_conforme_pct <= 0 || tolleranza_rivalutazione_pct <= 0) return ERR_OUT_OF_RANGE;
+    /* RIVALUTAZIONE deve restare una soglia PIU' ampia di CONFORME (vedi
+     * get_qualita: prima si controlla CONFORME, poi RIVALUTAZIONE) -
+     * altrimenti nessun pezzo potrebbe mai risultare RIVALUTAZIONE, solo
+     * CONFORME o SCARTO, contraddicendo la classificazione a 3 vie. */
+    if (tolleranza_rivalutazione_pct < tolleranza_conforme_pct) return ERR_OUT_OF_RANGE;
+
+    s->tolleranza_conforme_pct = tolleranza_conforme_pct;
+    s->tolleranza_rivalutazione_pct = tolleranza_rivalutazione_pct;
     return OP_SUCCESS;
 }
 
@@ -89,25 +114,20 @@ char get_Material(object_t *object, SensoreQualita *s)
     float ConfrontoB = (float)(((object -> dimensionX)*(object -> raggio)*(object -> raggio))*3.14 * densita[1]);
     int p=12;
 
-    /* Bug corretto: la versione precedente calcolava "materiale"/"e"
-     * UNA SOLA VOLTA in base a object->type, poi li riusava per
-     * confrontare ANCHE ConfrontoB (calcolato con la densita' opposta) -
-     * un oggetto dichiarato 'A' con dimensioni fuori dalla tolleranza
-     * "A" poteva quindi finire classificato 'B' per puro caso numerico,
-     * ed essere instradato nel buffer del materiale OPPOSTO a quello
-     * dichiarato (vedi README). Non basta ricalcolare "materiale"/"e"
-     * separatamente per A e per B: essendo la tolleranza una PERCENTUALE
-     * della massa di riferimento, la densita' si semplifica sempre
-     * nel confronto (materiale_X ± e_X, diviso per densita[X], da'
-     * sempre lo stesso intervallo [volume_target*0.88, volume_target*1.12]
-     * indipendentemente da quale densita' X si usi) - un vero confronto
-     * incrociato "con densita' corretta" darebbe quindi SEMPRE lo stesso
-     * esito del confronto primario, non avrebbe alcun valore
-     * discriminante. L'unico confronto che ha senso e' quindi UNO SOLO,
-     * quello coerente con il tipo dichiarato: se le dimensioni non sono
-     * abbastanza vicine al target per quel tipo, il pezzo e'
-     * "non_classificato" (non un secondo tentativo con l'altro
-     * materiale). */
+    /* Il confronto va fatto SOLO con la densita' del tipo dichiarato
+     * dall'oggetto (object->type), MAI con quella opposta: essendo la
+     * tolleranza una PERCENTUALE della massa di riferimento, la densita'
+     * si semplifica sempre nel confronto (materiale_X ± e_X, diviso per
+     * densita[X], da' sempre lo stesso intervallo
+     * [volume_target*0.88, volume_target*1.12] indipendentemente da
+     * quale densita' X si usi) - un confronto incrociato "con l'altra
+     * densita'" darebbe quindi SEMPRE lo stesso esito del confronto
+     * primario, senza alcun valore discriminante, e rischierebbe solo di
+     * instradare per puro caso numerico un pezzo dichiarato 'A' nel
+     * buffer del materiale opposto (vedi README). Se le dimensioni non
+     * sono abbastanza vicine al target per il tipo dichiarato, il pezzo
+     * va quindi contato come "non_classificato", non ritentato con
+     * l'altro materiale. */
     if (object -> type == 'A') {
         float materialeA = (float)(((s -> dimensionX_target)*(s -> raggio_target)*(s -> raggio_target))*3.14 * densita[0]);
         float eA = materialeA*p/100;
@@ -143,20 +163,17 @@ int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
     update_status(s, m, time_current);
 
     /* Questo ramo si attiva SOLO se get_qualita viene chiamata mentre
-     * s->status e' QUALITA_NOT_OK (cioe' il sensore E' in guasto in
-     * questo preciso istante). Con l'architettura attuale del progetto
-     * questo non succede mai in pratica: Controllore.c (processISP)
-     * controlla is_malfunzionante PRIMA di chiamare get_qualita, e se e'
-     * vero esce subito senza mai raggiungere questa funzione - vedi
-     * README, sezione "Guasto sensore qualita' = stazione
-     * indisponibile" (decisione del gruppo: durante il guasto la
-     * stazione TRATTIENE il pezzo invece di produrre una lettura
-     * incerta). Questo ramo resterebbe pero' l'unico a proteggere la
-     * correttezza se in futuro qualcuno chiamasse get_qualita
-     * direttamente durante un guasto, bypassando quel controllo a monte
-     * (es. un nuovo punto di chiamata, o un test che esercita questa
-     * funzione in isolamento) - senza, il codice sotto leggerebbe le
-     * dimensioni dell'oggetto come se il sensore funzionasse
+     * s->status e' QUALITA_NOT_OK (il sensore E' in guasto in questo
+     * preciso istante). Con l'architettura attuale del progetto questo
+     * non succede mai in pratica: Controllore.c (processISP) controlla
+     * is_malfunzionante PRIMA di chiamare get_qualita, e se e' vero esce
+     * subito senza mai raggiungere questa funzione (decisione del
+     * gruppo: durante il guasto la stazione TRATTIENE il pezzo invece di
+     * produrre una lettura incerta, vedi README). Questo ramo resta
+     * comunque una protezione difensiva, per il caso in cui in futuro
+     * qualcuno chiami get_qualita direttamente durante un guasto
+     * bypassando quel controllo a monte: senza, il codice sotto
+     * leggerebbe le dimensioni come se il sensore funzionasse
      * normalmente, producendo una lettura silenziosamente inaffidabile
      * invece di segnalare esplicitamente l'incertezza. */
     if (s->status != QUALITA_OK) {
@@ -171,22 +188,20 @@ int get_qualita(SensoreQualita *s, MalfunzionamentoSensore *m,
 if(s->status == QUALITA_OK){
     if (s->dimensionX_target == 0 || s->raggio_target == 0 ) {return ERR_NOT_SUPPORTED;} /* target non configurato per questo materiale */
 
-    /* Bug corretto: il cast (int) si applicava SOLO a fabs(...), non
-     * all'intera espressione - per precedenza degli operatori era
-     * equivalente a ((int)fabs(diff)) * 100 / target, che tronca la
-     * differenza a intero PRIMA di scalarla in percentuale. Con target
-     * piccoli (es. raggio_target=6 su ISP2) uno scostamento reale di
-     * 0.9 diventava (int)0.9=0, quindi percentuale=0 invece del ~15%
-     * reale, falsando la classificazione CONFORME/RIVALUTAZIONE/SCARTO.
-     * Ora il troncamento a intero avviene UNA SOLA VOLTA, alla fine, sul
-     * risultato gia' scalato in percentuale (100.0 forza la divisione
-     * in virgola mobile). */
+    /* ATTENZIONE: il cast a (int) va applicato al risultato GIA' scalato
+     * in percentuale (come sotto), mai al solo fabs(...) prima della
+     * divisione - altrimenti la differenza verrebbe troncata a intero
+     * PRIMA di diventare percentuale: con un target piccolo (es.
+     * raggio_target=6 su ISP2) uno scostamento reale di 0.9 diventerebbe
+     * (int)0.9=0, cioe' percentuale=0 invece del ~15% reale, falsando la
+     * classificazione CONFORME/RIVALUTAZIONE/SCARTO. Il "100.0" forza la
+     * divisione in virgola mobile prima del troncamento finale. */
     percentualeX = (int)( fabs(object->dimensionX - s->dimensionX_target) * 100.0 / s->dimensionX_target );
     percentualeR = (int)( fabs(object->raggio - s->raggio_target) * 100.0 / s->raggio_target );
-    if (percentualeX <= 5 && percentualeR <= 5  ) {
+    if (percentualeX <= s->tolleranza_conforme_pct && percentualeR <= s->tolleranza_conforme_pct  ) {
         s->risultato_ultima_lettura = CONFORME;
     } 
-     else if (percentualeX <= 10 && percentualeR <= 10 ) {
+     else if (percentualeX <= s->tolleranza_rivalutazione_pct && percentualeR <= s->tolleranza_rivalutazione_pct ) {
         s->risultato_ultima_lettura = RIVALUTAZIONE;
     } 
     else if (percentualeX <= 100 && percentualeR <= 100){

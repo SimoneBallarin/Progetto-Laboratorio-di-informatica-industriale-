@@ -212,7 +212,7 @@ short int controllore_collegaMotore( controllore_t *c, const char *targetID, int
  * comanda il Deviatore verso la posizione corrispondente all'esito e
  * aspetta che sia fisicamente in posizione (rispettando il tempo minimo
  * tra commutazioni) prima di instradare l'oggetto. Una ISP senza
- * Deviatore collegato instrada subito, come nella versione precedente.
+ * Deviatore collegato instrada subito, senza aspettare nessuna commutazione.
  * @param c Puntatore al controllore.
  * @param ispID ID della ISP (deve già esistere nella cella).
  * @param tempo_minimo_commutazioni Tempo minimo (passi di simulazione)
@@ -257,10 +257,12 @@ short int controllore_collegaSensorePresenza( controllore_t *c, const char *ID )
  *
  * Senza questa chiamata, una ISP è un puro timer (isp_admit/
  * isp_tryRelease) e non giudica mai la qualità di quello che passa: una
- * ISP "passacarte" (es. la prima di un layout a due stadi, che serve
- * solo a far scorrere il pezzo verso la stazione successiva) può
- * restare senza sensore agganciato, senza bisogno di nessun target
- * fittizio.
+ * ISP davvero "passacarte" (nessun controllo qualità, nemmeno solo per
+ * le statistiche) può restare senza sensore agganciato, senza bisogno
+ * di nessun target fittizio. Se invece serve solo instradare sempre
+ * sull'unica uscita pur continuando a registrare l'esito nelle
+ * statistiche, agganciare comunque il sensore e lasciare il criterio di
+ * smistamento sul default (vedi tipo_smistamento_t/SMISTAMENTO_AUTO).
  * @param c Puntatore al controllore.
  * @param ispID ID della ISP (deve già esistere nella cella).
  * @param dimensionX_target Valore di riferimento per la dimensione, vedi S_Qualita.h.
@@ -286,6 +288,108 @@ short int controllore_collegaSensoreQualita( controllore_t *c, const char *ispID
  */
 short int controllore_impostaGuastoQualita( controllore_t *c, const char *ispID,
                                              bool abilitato, int time_error, int time_ok );
+
+/**
+ * @brief Configura le soglie di classificazione (CONFORME/RIVALUTAZIONE/
+ *        SCARTO) del sensore di qualità agganciato a una ISP, in
+ *        percentuale di scostamento dal target (vedi
+ *        sensore_qualita_imposta_tolleranze in S_Qualita.h).
+ *
+ * Non obbligatoria: controllore_collegaSensoreQualita imposta già i
+ * default storici (5% CONFORME, 10% RIVALUTAZIONE). Va chiamata solo se
+ * serve una tolleranza diversa per una specifica ISP (es. da
+ * TOLLERANZA_CONFORME/TOLLERANZA_RIVALUTAZIONE nel plant_config, vedi
+ * parser_collegaSensoriQualita).
+ * @param c Puntatore al controllore.
+ * @param ispID ID della ISP il cui sensore va configurato.
+ * @param tolleranza_conforme_pct Soglia (%) sotto cui un pezzo è
+ *        CONFORME (deve essere > 0).
+ * @param tolleranza_rivalutazione_pct Soglia (%) sotto cui un pezzo è
+ *        RIVALUTAZIONE invece di SCARTO (deve essere >=
+ *        tolleranza_conforme_pct).
+ * @return OP_SUCCESS se impostate, ERR_NOT_FOUND se questa ISP non ha
+ *         nessun sensore agganciato (vedi controllore_collegaSensoreQualita),
+ *         ERR_OUT_OF_RANGE se i valori non rispettano i vincoli sopra,
+ *         un altro codice ERR_* (vedi errors.h) altrimenti.
+ */
+short int controllore_impostaToleranzaQualita( controllore_t *c, const char *ispID,
+                                                int tolleranza_conforme_pct, int tolleranza_rivalutazione_pct );
+
+/**
+ * @brief Criterio con cui una ISP sceglie l'uscita su cui instradare un
+ *        pezzo appena controllato, tra quelle collegate (vedi
+ *        cell_connect) e l'eventuale Deviatore agganciato (vedi
+ *        controllore_collegaDeviatore).
+ *
+ * Pensato per riusare la STESSA logica di instradamento (in
+ * Controllore.c, non duplicata) qualunque sia il layout descritto dal
+ * plant_config: cambia solo il numero di uscite collegate via CONNECT e
+ * il tipo di smistamento dichiarato per l'ISP (vedi
+ * controllore_impostaSmistamentoQualita / campo SMISTAMENTO nel
+ * plant_config), senza bisogno di toccare il codice per adattarsi a un
+ * layout diverso (es. layout 1 vs layout 2 del progetto preliminare).
+ */
+typedef enum {
+    /** @brief Dedotto automaticamente dal numero di uscite collegate
+     *  (comportamento storico, sempre corretto per 1 o per 4+ uscite -
+     *  vedi SMISTAMENTO_PASSACARTE/SMISTAMENTO_MATERIALE_E_QUALITA
+     *  sotto). Con un numero di uscite diverso (2 o 3) l'inferenza
+     *  automatica è ambigua: viene trattato come SMISTAMENTO_QUALITA
+     *  (il caso più comune per un'ISP con più uscite dopo una
+     *  macchina), ma è consigliato dichiarare il tipo esplicitamente
+     *  in quei casi invece di affidarsi al default. È il valore
+     *  impostato di default da controllore_collegaSensoreQualita. */
+    SMISTAMENTO_AUTO = 0,
+    /** @brief Nessuna decisione: instrada sempre sull'unica uscita
+     *  collegata (indice 0), a prescindere dall'esito del controllo -
+     *  es. la prima ISP di un layout a più stadi, che serve solo a
+     *  far scorrere il pezzo verso la stazione successiva. L'esito
+     *  viene comunque calcolato e registrato nelle statistiche, solo
+     *  non usato per instradare. */
+    SMISTAMENTO_PASSACARTE = 1,
+    /** @brief Instrada SOLO in base al materiale riconosciuto (vedi
+     *  get_Material in S_Qualita.h), ignorando l'esito qualità:
+     *  indice 0 = materiale 'A', indice 1 = materiale 'B'. Un pezzo
+     *  non classificabile va sull'ultima uscita collegata se ce ne
+     *  sono almeno 3 (una dedicata ai non classificati), altrimenti
+     *  (solo 2 uscite) resta sull'uscita 0. Tipico di un'ISP posta
+     *  PRIMA della lavorazione, per smistare il flusso su linee
+     *  dedicate per materiale (es. ISP0 del layout 2). */
+    SMISTAMENTO_MATERIALE = 2,
+    /** @brief Instrada SOLO in base all'esito qualità (CONFORME/
+     *  RIVALUTAZIONE/SCARTO), ignorando il materiale: indice = esito
+     *  diretto (0/1/2, vedi TipoQualita in S_Qualita.h). Tipico di
+     *  un'ISP posta DOPO la lavorazione su una linea già dedicata a
+     *  un solo materiale (il materiale è già implicito nella linea,
+     *  non serve ridistinguerlo qui - es. le ISP dopo M nel layout 2). */
+    SMISTAMENTO_QUALITA = 3,
+    /** @brief Instrada in base a ENTRAMBI materiale e qualità insieme,
+     *  su 4 uscite: indice 0 = CONFORME+materiale 'A', 1 =
+     *  RIVALUTAZIONE (anche per un pezzo CONFORME ma non
+     *  classificabile per materiale), 2 = SCARTO, 3 = CONFORME+
+     *  materiale 'B'. Comportamento storico dell'unica ISP del layout
+     *  1 con smistamento finale (es. ISP2). */
+    SMISTAMENTO_MATERIALE_E_QUALITA = 4
+} tipo_smistamento_t;
+
+/**
+ * @brief Configura il criterio di smistamento del sensore di qualità
+ *        agganciato a una ISP (vedi tipo_smistamento_t).
+ *
+ * Non obbligatoria: controllore_collegaSensoreQualita imposta già
+ * SMISTAMENTO_AUTO, che copre correttamente i due casi storici (1
+ * uscita o 4+ uscite) senza bisogno di questa chiamata. Va chiamata
+ * esplicitamente solo per i casi ambigui per il numero di uscite (2 o 3
+ * uscite, vedi SMISTAMENTO_MATERIALE/SMISTAMENTO_QUALITA) o per
+ * dichiarare comunque l'intento in modo esplicito.
+ * @param c Puntatore al controllore.
+ * @param ispID ID della ISP il cui sensore va configurato.
+ * @param tipo Il criterio di smistamento da usare.
+ * @return OP_SUCCESS se impostato, ERR_NOT_FOUND se questa ISP non ha
+ *         nessun sensore agganciato (vedi controllore_collegaSensoreQualita),
+ *         un altro codice ERR_* (vedi errors.h) altrimenti.
+ */
+short int controllore_impostaSmistamentoQualita( controllore_t *c, const char *ispID, tipo_smistamento_t tipo );
 
 /**
  * @brief Esegue un passo di controllo: scandisce tutte le entità della
@@ -340,6 +444,22 @@ int controllore_getPercentualePiccoBuffer( controllore_t *c, const char *bufferI
  * @return Lo stato, oppure ERR_NULL_PTR/ERR_NOT_FOUND se non trovato.
  */
 int controllore_getStatoBuffer( const controllore_t *c, const char *bufferID );
+
+/**
+ * @brief Controlla se un Motore è agganciato a targetID (vedi
+ *        controllore_collegaMotore), senza doverne leggere i tempi.
+ *
+ * Utile per decidere dinamicamente quali entità monitorare nelle
+ * statistiche (statistiche_monitoraMotore) senza dover conoscere in
+ * anticipo i nomi usati dal plant_config - importante per non legare il
+ * codice a un layout specifico (vedi discussione in README, sezione
+ * "Layout 2").
+ * @param c Puntatore al controllore.
+ * @param targetID ID del nastro o della macchina.
+ * @return true se un Motore è agganciato a targetID, false altrimenti
+ *         (anche se c o targetID sono NULL).
+ */
+bool controllore_haMotoreCollegato( const controllore_t *c, const char *targetID );
 
 /**
  * @brief Tempo cumulativo (in passi di simulazione) in cui il motore
@@ -555,6 +675,28 @@ int controllore_getPendingCount( const controllore_t *c );
  * @return Numero di arrivi ancora in coda, oppure ERR_NULL_PTR se c è NULL.
  */
 int controllore_getArriviSchedulatiCount( const controllore_t *c );
+
+/**
+ * @brief Ammette subito nei rispettivi buffer tutti gli arrivi schedulati
+ *        (vedi controllore_schedulaArrivo) il cui arrival_step è <= step.
+ *
+ * E' lo stesso passo "1ter" che controllore_step esegue automaticamente
+ * a inizio di ogni passo di simulazione (ammissione arrivi + segnalazione
+ * al sensore di presenza) - esposta qui a parte per poter far entrare
+ * fisicamente nei buffer gli oggetti con ARRIVAL_STEP=0 PRIMA di stampare
+ * lo "stato iniziale" in main.c, senza dover eseguire anche il resto
+ * della logica di controllore_step (ISP/macchine/nastri), che
+ * avanzerebbe la simulazione vera e propria.
+ *
+ * Chiamarla con step=0 prima del ciclo di simulazione e poi lasciare che
+ * il ciclo parta comunque da step=0 è sicuro: gli oggetti già ammessi
+ * qui vengono rimossi dalla coda interna, quindi il primo
+ * controllore_step(ctrl, 0) li ritrova già fuori dalla coda e non li
+ * riammette una seconda volta (idempotente).
+ * @param c Puntatore al controllore.
+ * @param step Step di simulazione da usare come riferimento (tipicamente 0).
+ */
+void controllore_ammettiArriviSchedulati( controllore_t *c, int step );
 
 /**
  * @brief Stampa lo stato della cella orchestrata e le statistiche del

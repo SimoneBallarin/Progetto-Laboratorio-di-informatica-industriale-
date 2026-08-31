@@ -238,23 +238,28 @@ short int machine_admit( machine_t *m, object_t *object, int step_corrente )
 }
 
 /**
- * @brief Restituisce un fattore moltiplicativo casuale in
- *        [1 - tolleranza, 1 + tolleranza], da applicare a un valore per
- *        simularne una lettura/lavorazione imprecisa.
+ * @brief Restituisce uno scarto casuale UNIFORME nell'intervallo chiuso
+ *        [-tolleranza, +tolleranza], da sommare (in frazione) a un
+ *        valore per simularne una lettura/lavorazione imprecisa: il
+ *        valore finale applicato dal chiamante (base + base*scarto) resta
+ *        quindi sempre entro [base*(1-tolleranza), base*(1+tolleranza)].
+ * @param tolleranza Ampiezza massima dello scarto (frazione, es. 0.02 = 2%).
+ * @return Scarto casuale in [-tolleranza, +tolleranza], oppure 0.0 se
+ *         tolleranza <= 0.
  */
 static double fattore_rumore( double tolleranza )
 {
-    double r = rand()%10; //scelta casuale per la tolleranza da applicare
+    double scarto_unitario; /* uniforme in [-1.0, +1.0] */
 
     if ( tolleranza <= 0.0 ) {
         return 0.0;
     }
 
-    if(r==5){return tolleranza*5;}
-    if(r==6){return -tolleranza*5;}
-    else{return tolleranza*(rand()%3-1);}
-    
-    
+    /* RAND_MAX e' garantito >= 1 dallo standard C, quindi il
+     * denominatore non e' mai zero. */
+    scarto_unitario = ( (double) rand() / (double) RAND_MAX ) * 2.0 - 1.0;
+
+    return tolleranza * scarto_unitario;
 }
 
 object_t *machine_tryRelease( machine_t *m, int step_corrente )
@@ -271,15 +276,13 @@ object_t *machine_tryRelease( machine_t *m, int step_corrente )
     }
 
     result = m->oggetto_in_lavorazione;
-    int Dlavorato = 20;
-    int Rlavorato = 4;
     /* Rumore indipendente su dimensionX e raggio: una lavorazione reale
      * non e' mai perfettamente precisa. I due fattori sono estratti
      * separatamente (non lo stesso rumore applicato a entrambi), cosi'
      * un pezzo puo' uscire con la dimensione fuori tolleranza ma il
      * raggio nella norma, o viceversa. */
-    nuova_dimensione = (object_getDimensionX( result )-Dlavorato) + (object_getDimensionX( result )-Dlavorato) * fattore_rumore( m->tolleranza_lavorazione );
-    nuovo_raggio      = (object_getRaggio( result )-Rlavorato) + (object_getRaggio( result )-Rlavorato) * fattore_rumore( m->tolleranza_lavorazione );
+    nuova_dimensione = (object_getDimensionX( result )-MACHINE_DLAVORATO) + (object_getDimensionX( result )-MACHINE_DLAVORATO) * fattore_rumore( m->tolleranza_lavorazione );
+    nuovo_raggio      = (object_getRaggio( result )-MACHINE_RLAVORATO) + (object_getRaggio( result )-MACHINE_RLAVORATO) * fattore_rumore( m->tolleranza_lavorazione );
 
     /* dimensione e raggio non hanno senso negativi (object_setRaggio
      * richiede >= 0): un rumore che li spingerebbe sotto zero viene

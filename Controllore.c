@@ -83,6 +83,7 @@ typedef struct qualitaSensorAssoc {
     SensoreQualita sensore;
     MalfunzionamentoSensore guasto;
     long step_bloccata_per_guasto;  /**< Vedi controllore_getStepBloccoGuasto. */
+    tipo_smistamento_t smistamento; /**< Vedi controllore_impostaSmistamentoQualita. */
     struct qualitaSensorAssoc *next;
 } qualitaSensorAssoc_t;
 
@@ -187,12 +188,10 @@ static presenceSensorAssoc_t *findPresenceSensorAssoc( controllore_t *c, const c
 /**
  * @brief Aggancia un sensore di presenza a un ID di ingresso.
  *
- * PRIMA di questa versione, il sensore veniva creato "al volo" alla
- * prima chiamata di controllore_segnalaArrivo per un dato ID -
- * incoerente con Motore/Deviatore/SensoreQualita/SensoreBuffer (sempre
- * agganciati esplicitamente PRIMA di essere usati). Ora
- * controllore_segnalaArrivo fallisce con ERR_NOT_FOUND se nessuno ha
- * prima chiamato questa funzione per quell'ID.
+ * Va chiamata PRIMA di poter usare controllore_segnalaArrivo per quell'ID
+ * (coerente con Motore/Deviatore/SensoreQualita/SensoreBuffer, sempre
+ * agganciati esplicitamente prima dell'uso): senza, controllore_segnalaArrivo
+ * fallisce con ERR_NOT_FOUND.
  *
  * L'ID non deve necessariamente esistere già nella cella come buffer
  * (per design: "il sensore è indipendente dal buffer vero e proprio"):
@@ -450,15 +449,10 @@ static short int pendingAdd( controllore_t *c, object_t *obj, entity_type_t dest
 /**
  * @brief Se destID (di tipo destType) non ha nessuna uscita configurata,
  *        l'oggetto appena arrivato lì non si muoverà mai più: lo
- *        contiamo come completato in questo momento.
- *
- * Bug corretto: 'completati' veniva incrementato SOLO nel caso limite
- * di routeObject in cui l'indice di uscita richiesto non esiste (esito
- * di una ISP senza abbastanza uscite collegate) - ma un inserimento
- * RIUSCITO in un buffer terminale (es. uno dei buffer finali del
- * layout, che hanno 0 output per design) non veniva mai contato:
- * 'completati' restava sempre a 0 anche a simulazione conclusa con
- * successo.
+ *        contiamo come completato in questo momento (unico punto del
+ *        controllore che incrementa c->completati, chiamato da ogni
+ *        percorso di inserimento riuscito: routeObject, retryPending,
+ *        processBuffer).
  */
 static void segnaCompletatoSeTerminale( controllore_t *c, entity_type_t destType,
                                          const char *destID, object_t *obj, int step )
@@ -670,7 +664,102 @@ static void aggiornaSensoriQualita( controllore_t *c, int step )
 {
     qualitaSensorAssoc_t *cur;
     for ( cur = c->sensoriQualita; cur != NULL; cur = cur->next ) {
+        bool era_malfunzionante = cur->guasto.is_malfunzionante;
         update_status( &cur->sensore, &cur->guasto, step );
+        /* Log SOLO sul fronte di transizione (non a ogni passo, per non
+         * riempire simulazione.log con una riga identica ripetuta per
+         * tutta la durata del guasto): il controllore "riconosce il
+         * problema e lo registra nel log" (sez. 5 della traccia) esattamente
+         * nell'istante in cui il sensore entra o esce dal malfunzionamento,
+         * non solo a posteriori nelle statistiche finali
+         * (step_bloccata_per_guasto, vedi statistiche_stampa). */
+        if ( !era_malfunzionante && cur->guasto.is_malfunzionante ) {
+            log_evento( c->log, step, LOG_WARNING,
+                        "Guasto sensore qualita' su '%s': sensore in malfunzionamento, "
+                        "la ISP tratterra' i pezzi finche' non rientra", cur->ispID );
+        } else if ( era_malfunzionante && !cur->guasto.is_malfunzionante ) {
+            log_evento( c->log, step, LOG_INFO,
+                        "Guasto sensore qualita' su '%s': rientrato, sensore di nuovo OK", cur->ispID );
+        }
+    }
+}
+
+/**
+ * @brief Determina l'indice di uscita su cui instradare un pezzo appena
+ *        controllato da un'ISP, in base al criterio di smistamento
+ *        configurato per il suo sensore di qualità (vedi
+ *        tipo_smistamento_t in Controllore.h) e al numero di uscite
+ *        effettivamente collegate via CONNECT.
+ *
+ * Punto UNICO di questa decisione, riusato qualunque sia il layout
+ * descritto dal plant_config (es. layout 1 con un'unica ISP finale a 4
+ * uscite, o layout 2 con un'ISP iniziale solo-materiale e più ISP
+ * finali solo-qualità su linee separate): cambiare layout significa
+ * cambiare plant_config (CONNECT + SMISTAMENTO), non questa funzione.
+ */
+static int determinaIndiceUscitaQualita( const qualitaSensorAssoc_t *qAssoc, TipoQualita esito, int outCount, char materiale )
+{
+    tipo_smistamento_t tipo = qAssoc->smistamento;
+
+    if ( tipo == SMISTAMENTO_AUTO ) {
+        /* Comportamento storico, dedotto dal numero di uscite collegate
+         * (vedi doc di SMISTAMENTO_AUTO in Controllore.h): 1 uscita ->
+         * passacarte; 4+ uscite -> combinato materiale+qualita'. Con un
+         * numero di uscite diverso (2 o 3) l'inferenza sarebbe ambigua,
+         * quindi si ricade su "solo qualita'" (il caso piu' comune per
+         * un'ISP con piu' uscite dopo una macchina). */
+        if ( outCount <= 1 ) {
+            tipo = SMISTAMENTO_PASSACARTE;
+        } else if ( outCount >= 4 ) {
+            tipo = SMISTAMENTO_MATERIALE_E_QUALITA;
+        } else {
+            tipo = SMISTAMENTO_QUALITA;
+        }
+    }
+
+    switch ( tipo ) {
+        case SMISTAMENTO_PASSACARTE:
+            return 0;
+
+        case SMISTAMENTO_MATERIALE:
+            /* Solo materiale (es. l'ISP iniziale del layout 2, prima
+             * della lavorazione, che smista su linee separate per
+             * materiale): indice 0 = 'A', 1 = 'B'. Un pezzo non
+             * classificabile (dimensioni fuori tolleranza per il tipo
+             * dichiarato) va sull'ultima uscita collegata se ce ne sono
+             * almeno 3 (una uscita dedicata ai non classificati),
+             * altrimenti (solo 2 uscite configurate) resta sull'uscita
+             * 0: scelta conservativa, non c'e' un indice "neutro"
+             * evidente con solo due uscite disponibili. */
+            if ( materiale == 'B' ) { return 1; }
+            if ( materiale == 'A' ) { return 0; }
+            return ( outCount >= 3 ) ? 2 : 0;
+
+        case SMISTAMENTO_QUALITA:
+            /* Solo qualita' (es. le ISP finali del layout 2, una per
+             * linea/materiale: il materiale e' gia' implicito nella
+             * linea, non serve ridistinguerlo qui): l'indice coincide
+             * direttamente con l'esito, dato che TipoQualita e' gia'
+             * numerato CONFORME=0, RIVALUTAZIONE=1, SCARTO=2 (vedi
+             * S_Qualita.h). */
+            return (int) esito;
+
+        case SMISTAMENTO_MATERIALE_E_QUALITA:
+        default:
+            /* Combinato su 4 uscite (layout 1): l'esito CONFORME da
+             * solo non basta a scegliere tra le due uscite "pezzo
+             * conforme" (una per materiale) - si usa il materiale per
+             * decidere tra l'indice 0 ('A') e l'ultimo, 3 ('B'); se
+             * get_Material non riesce a classificarlo, l'indice diventa
+             * 1 (RIVALUTAZIONE) invece di indovinare comunque tra le
+             * due uscite "conforme" - vedi discussione nel README. */
+            if ( esito == CONFORME ) {
+                if ( materiale != 'A' && materiale != 'B' ) {
+                    return (int) RIVALUTAZIONE;
+                }
+                return ( materiale == 'B' ) ? 3 : 0;
+            }
+            return (int) esito;
     }
 }
 
@@ -727,77 +816,30 @@ static void processISP( controllore_t *c, const char *ID, int step )
          * comunque rilasciato, trattato convenzionalmente come SCARTO. */
         esito = ( esitoGrezzo >= 0 ) ? (TipoQualita) esitoGrezzo : SCARTO;
     } else {
-        /* Nessun sensore agganciato a questa ISP (es. una ISP
-         * "passacarte" con una sola uscita, che non deve giudicare la
-         * qualita'): l'esito non verra' comunque usato per instradare
-         * se ha una sola uscita (vedi outCount==1 sotto), quindi un
-         * valore neutro qui va bene. Se invece l'ISP ha piu' uscite ma
-         * nessun sensore agganciato, e' una configurazione incompleta:
-         * trattiamo tutto come SCARTO, scelta conservativa. */
         esito = SCARTO;
     }
 
     dev = findDeviatoreAssoc( c, ID );
-
-    /* L'indice di uscita corrisponde di norma all'esito (convenzione in
-     * cell.h: CONFORME=0, RIVALUTAZIONE=1, SCARTO=2). Con 4 uscite
-     * collegate (layout con doppio esito "conforme", uno per materiale:
-     * es. Alacciaio/rame), l'esito CONFORME da solo non basta a
-     * scegliere tra le due: si usa get_Material (sotto) per decidere
-     * tra l'indice 0 (materiale 'A') e l'ultimo indice, 3 (materiale
-     * 'B'); se get_Material non riesce a classificarlo (dimensioni
-     * reali fuori tolleranza per il tipo dichiarato), l'indice diventa
-     * 1 (RIVALUTAZIONE/B_riqualifica) invece di indovinare comunque tra
-     * le due uscite "conforme" - vedi sotto. */
     outCount = genericOutputCount( c, ENTITY_ISP, ID );
-    outIndex = (int) esito;
 
-    /* ISP "passacarte" con una sola uscita (es. il primo ISP di un
-     * layout che serve solo a taggare il materiale, non a giudicare la
-     * qualita'): l'esito calcolato da get_qualita non ha alcun indice
-     * valido a cui corrispondere se non lo 0, quindi va sempre e
-     * comunque instradato li', a prescindere da quale sia. Senza questo
-     * caso, un esito RIVALUTAZIONE/SCARTO su una ISP a singola uscita
-     * farebbe uscire l'oggetto dalla linea per errore (trattato come
-     * "nessuna uscita a quell'indice"). */
-    if ( outCount == 1 ) {
-        outIndex = 0;
-    }
-
-    /* get_Material (calcolo su densita'/geometria, non il campo
-     * object->type impostato a mano alla creazione) va chiamata ogni
-     * volta che questa ISP ha un sensore di qualita' agganciato, non
-     * solo quando serve per instradare (outCount>=4): e' l'unico modo
-     * per popolare i contatori A/B del sensore (letti da
-     * controllore_getMaterialeA/B, usati dalle statistiche - vedi
-     * statistiche_stampa) anche per un'ISP "passacarte" a singola
-     * uscita come ISP1, che classifica comunque il materiale ma non ha
-     * bisogno di scegliere tra due uscite diverse per instradarlo. */
     if ( qAssoc != NULL ) {
+        /* get_Material (calcolo su densita'/geometria, non il campo
+         * object->type impostato a mano alla creazione) va chiamata
+         * sempre che questa ISP abbia un sensore agganciato, non solo
+         * quando il criterio di smistamento la usa per instradare: e'
+         * l'unico modo per popolare i contatori A/B del sensore (letti
+         * da controllore_getMaterialeA/B, usati dalle statistiche - vedi
+         * statistiche_stampa) anche per un'ISP il cui smistamento non
+         * dipende dal materiale (es. SMISTAMENTO_PASSACARTE/QUALITA). */
         char materiale = get_Material( obj, &qAssoc->sensore );
-
-        if ( esito == CONFORME && outCount >= 4 ) {
-            /* Con 4 uscite, l'esito CONFORME da solo non basta a
-             * scegliere tra le due uscite "pezzo conforme" (una per
-             * materiale): si usa il materiale appena calcolato per
-             * decidere l'indice 0 (materiale 'A') o l'ultimo indice, 3
-             * (materiale 'B'). */
-            if ( materiale != 'A' && materiale != 'B' ) {
-                /* get_Material non ha riconosciuto il materiale entro
-                 * tolleranza per nessuna delle due densita': le
-                 * dimensioni reali del pezzo non corrispondono al
-                 * target per il proprio tipo dichiarato, quindi merita
-                 * una verifica ulteriore invece di proseguire come se
-                 * fosse regolare (decisione del gruppo: instradare in
-                 * RIVALUTAZIONE/B_riqualifica, indice 1, invece di
-                 * indovinare comunque tra le due uscite "conforme" in
-                 * base al tipo dichiarato - vedi discussione nel
-                 * README). */
-                outIndex = (int) RIVALUTAZIONE;
-            } else {
-                outIndex = ( materiale == 'B' ) ? 3 : 0;
-            }
-        }
+        outIndex = determinaIndiceUscitaQualita( qAssoc, esito, outCount, materiale );
+    } else {
+        /* Nessun sensore agganciato a questa ISP: nessuna decisione
+         * possibile. Con una sola uscita funziona comunque (passacarte,
+         * indice 0); con piu' uscite e nessun sensore e' una
+         * configurazione incompleta, si sceglie conservativamente
+         * SCARTO invece di indovinare un'uscita a caso. */
+        outIndex = ( outCount == 1 ) ? 0 : (int) SCARTO;
     }
 
     routeObject( c, ENTITY_ISP, ID, obj, outIndex, step, dev );
@@ -982,14 +1024,11 @@ static void processBuffer( controllore_t *c, const char *ID, int step )
 /**
  * @brief Aggancia un sensore buffer a un buffer già presente nella cella.
  *
- * PRIMA di questa versione, un SensoreBuffer veniva creato in automatico
- * da controllore_create per OGNI buffer già presente nella cella in quel
- * momento, senza possibilità di scegliere - incoerente con
- * Motore/Deviatore/SensoreQualita (sempre agganciati esplicitamente).
- * Ora un buffer senza questa chiamata semplicemente non ha nessun
- * sensore: controllore_getPercentualeBuffer/getStatoBuffer restituiscono
- * ERR_NOT_FOUND, e l'ammissione "buffer-aware" (Strategia 1) non ha
- * nulla da leggere per quel buffer specifico (non blocca comunque
+ * Va agganciato esplicitamente (coerente con Motore/Deviatore/
+ * SensoreQualita): un buffer senza questa chiamata semplicemente non ha
+ * nessun sensore, controllore_getPercentualeBuffer/getStatoBuffer
+ * restituiscono ERR_NOT_FOUND, e l'ammissione "buffer-aware" (Strategia 1)
+ * non ha nulla da leggere per quel buffer specifico (non blocca comunque
  * l'ammissione, la salta soltanto).
  */
 short int controllore_collegaSensoreBuffer( controllore_t *c, const char *bufferID )
@@ -1064,11 +1103,9 @@ controllore_t *controllore_create( cell_t *cell, double soglia_buffer, short int
     c->completati = 0;
     c->log = NULL;
 
-    /* Nessun sensore creato automaticamente qui: a differenza della
-     * versione precedente (che creava un SensoreBuffer per OGNI buffer
-     * già presente nella cella), ora ogni sensore va agganciato
-     * esplicitamente con controllore_collegaSensoreBuffer, coerente con
-     * Motore/Deviatore/SensoreQualita. */
+    /* Nessun sensore creato automaticamente qui: ogni sensore va
+     * agganciato esplicitamente con controllore_collegaSensoreBuffer,
+     * coerente con Motore/Deviatore/SensoreQualita. */
 
     if ( errCode != NULL ) { *errCode = OP_SUCCESS; }
     return c;
@@ -1182,9 +1219,6 @@ short int controllore_collegaMotore( controllore_t *c, const char *targetID, int
     node->targetID[IDLENGTH - 1] = '\0';
     node->targetType = targetType;
 
-    /* Bug: la versione precedente chiamava motore_init con soli 3
-     * argomenti, ma la firma richiede anche accelerazione_desiderata
-     * (aggiunta di recente a Motore.h) - non compilava. */
     err = (short int) motore_init( &node->motore, targetID, velocita_target, accelerazione_target );
     if ( err != OP_SUCCESS ) {
         free( node );
@@ -1295,6 +1329,7 @@ short int controllore_collegaSensoreQualita( controllore_t *c, const char *ispID
         return err;
     }
     node->step_bloccata_per_guasto = 0;
+    node->smistamento = SMISTAMENTO_AUTO;
 
     node->next = c->sensoriQualita;
     c->sensoriQualita = node;
@@ -1329,6 +1364,41 @@ short int controllore_impostaGuastoQualita( controllore_t *c, const char *ispID,
     }
 
     node->guasto.malfunzionamento_abilitato = abilitato;
+
+    return OP_SUCCESS;
+}
+
+short int controllore_impostaToleranzaQualita( controllore_t *c, const char *ispID,
+                                                int tolleranza_conforme_pct, int tolleranza_rivalutazione_pct )
+{
+    qualitaSensorAssoc_t *node;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+
+    node = findQualitaSensorAssoc( c, ispID );
+    if ( node == NULL ) {
+        return ERR_NOT_FOUND; /* nessun sensore agganciato a questa ISP */
+    }
+
+    return sensore_qualita_imposta_tolleranze( &node->sensore, tolleranza_conforme_pct, tolleranza_rivalutazione_pct );
+}
+
+short int controllore_impostaSmistamentoQualita( controllore_t *c, const char *ispID, tipo_smistamento_t tipo )
+{
+    qualitaSensorAssoc_t *node;
+
+    if ( c == NULL || ispID == NULL ) {
+        return ERR_NULL_PTR;
+    }
+
+    node = findQualitaSensorAssoc( c, ispID );
+    if ( node == NULL ) {
+        return ERR_NOT_FOUND; /* nessun sensore agganciato a questa ISP */
+    }
+
+    node->smistamento = tipo;
 
     return OP_SUCCESS;
 }
@@ -1462,6 +1532,14 @@ int controllore_getStatoBuffer( const controllore_t *c, const char *bufferID )
  * @return Il tempo cumulativo, oppure ERR_NULL_PTR/ERR_NOT_FOUND (vedi
  *         errors.h) se non trovato.
  */
+bool controllore_haMotoreCollegato( const controllore_t *c, const char *targetID )
+{
+    if ( c == NULL || targetID == NULL ) {
+        return false;
+    }
+    return findMotoreAssoc( (controllore_t *) c, targetID ) != NULL;
+}
+
 long controllore_getTempoMotoreOn( const controllore_t *c, const char *targetID )
 {
     motoreAssoc_t *mot;
@@ -1670,14 +1748,32 @@ short int controllore_schedulaArrivo( controllore_t *c, const char *bufferID, ob
     strncpy( node->bufferID, bufferID, IDLENGTH - 1 );
     node->bufferID[IDLENGTH - 1] = '\0';
     node->arrival_step = arrival_step;
+    node->next = NULL;
 
-    /* In testa, come le altre code interne (pending, sensoriQualita,
-     * ecc.): l'ordine di ammissione non dipende dall'ordine con cui
-     * queste entrate sono state schedulate, ma da arrival_step (vedi
-     * retryArriviSchedulati, che scandisce l'intera lista ogni passo),
-     * quindi non serve mantenerla ordinata. */
-    node->next = c->arriviSchedulati;
-    c->arriviSchedulati = node;
+    /* In CODA, non in testa: per due arrivi con lo STESSO arrival_step
+     * (caso comune, es. piu' righe con ARRIVAL_STEP=0 nello stesso file
+     * oggetti), retryArriviSchedulati scandisce la lista in ordine e li
+     * ammette in quell'ordine - se la si costruisse in testa (come le
+     * altre code interne, es. "pending"), l'ultimo schedulato finirebbe
+     * ammesso PER PRIMO, invertendo silenziosamente l'ordine del file
+     * rispetto a quello scritto da chi lo ha compilato. Per la
+     * Strategia 1 (priorita') questo non cambia nulla (la priorita'
+     * vince comunque), ma per la Strategia 2 (FCFS) e' l'unica cosa che
+     * decide chi esce prima - bug riprodotto e confermato: P001 (nel
+     * file oggetti reale del progetto, listato per primo con lo stesso
+     * ARRIVAL_STEP=0 di P002) usciva DOPO P002 in FCFS, nonostante fosse
+     * elencato per primo.
+     * La lista resta corta (una simulazione tipica schedula poche decine
+     * di arrivi), quindi l'O(n) per trovare la coda non pesa. */
+    if ( c->arriviSchedulati == NULL ) {
+        c->arriviSchedulati = node;
+    } else {
+        arrivoSchedulato_t *tail = c->arriviSchedulati;
+        while ( tail->next != NULL ) {
+            tail = tail->next;
+        }
+        tail->next = node;
+    }
 
     return OP_SUCCESS;
 }
@@ -1722,6 +1818,14 @@ int controllore_getArriviSchedulatiCount( const controllore_t *c )
     }
 
     return count;
+}
+
+void controllore_ammettiArriviSchedulati( controllore_t *c, int step )
+{
+    if ( c == NULL ) {
+        return;
+    }
+    retryArriviSchedulati( c, step );
 }
 
 void controllore_print( const controllore_t *c )

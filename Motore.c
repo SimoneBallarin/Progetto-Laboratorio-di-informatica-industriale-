@@ -1,3 +1,7 @@
+/**
+ * @file Motore.c
+ * @brief Implementazione dell'attuatore motore.
+ */
 #include <stdio.h>
 #include <string.h>
 #include "Motore.h"
@@ -17,8 +21,8 @@ int motore_init(Motore *m, const char *ID, int velocita_target , int accelerazio
     m->status_precedente = MOTORE_OFF;
     m->acc = accelerazione_desiderata; /* accelerazione del motore */
 
-    /* la versione originale inizializzava solo temperatura_start,
-     * lasciando temperatura_motore non inizializzata */
+    /* Temperatura di riposo = temperatura ambiente (vedi la clausola
+     * "non scende sotto 25" in motore_set_temperatura). */
     m->temperatura_motore = 25;
     m->temperatura_start = 25;
 
@@ -30,8 +34,10 @@ int Motortime_update(MotorTime *mt, int time_globale, MotorState status, MotorSt
     if (mt == NULL) return ERR_NULL_PTR;
 
     /* time_start/time_stop vengono aggiornati SOLO sul fronte di
-     * transizione, non ad ogni chiamata: era questo il bug che
-     * impediva al motore di accelerare (vedi motore_update). */
+     * transizione, non ad ogni chiamata: altrimenti time_on/time_off
+     * (calcolati sotto come "time_globale - time_start/time_stop")
+     * resterebbero sempre a 0 e il motore non accelererebbe mai (vedi
+     * motore_aggiorna_velocita, che usa proprio time_on). */
     if (status == MOTORE_ON && status_precedente == MOTORE_OFF) {
         mt->time_start = time_globale;
     } else if (status == MOTORE_OFF && status_precedente == MOTORE_ON) {
@@ -77,10 +83,9 @@ int motore_set_temperatura(Motore *m, const MotorTime *mt, MotorState status_pre
 {
     if (m == NULL || mt == NULL) return ERR_NULL_PTR;
 
-    /* alla transizione di stato, il punto di partenza per il nuovo
-     * calcolo e' la temperatura attuale (nella versione originale i due
-     * rami if facevano gia' la stessa identica assegnazione: unificati
-     * in un solo controllo sul cambio di stato) */
+    /* Alla transizione di stato, il punto di partenza per il nuovo
+     * calcolo e' la temperatura attuale (evita di dover mantenere due
+     * rami identici per ON e OFF, uno solo per rilevare il cambio). */
     if (m->status != status_precedente) {
         m->temperatura_start = m->temperatura_motore;
     }

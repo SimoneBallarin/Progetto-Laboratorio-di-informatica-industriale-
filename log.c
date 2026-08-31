@@ -118,14 +118,31 @@ long log_getContatore( const log_t *l, LogLivello livello )
     return l->contatori[livello];
 }
 
-void log_stampaRiepilogo( const log_t *l )
+void log_stampaRiepilogo( const log_t *l, bool anche_su_stdout )
 {
     if ( l == NULL ) {
-        printf( "log_stampaRiepilogo: log NULL\n" );
+        if ( anche_su_stdout ) {
+            printf( "log_stampaRiepilogo: log NULL\n" );
+        }
         return;
     }
-    printf( "\n=== LOG EVENTI (riepilogo) ===\n" );
-    printf( "  INFO:    %ld\n", l->contatori[LOG_INFO] );
-    printf( "  WARNING: %ld\n", l->contatori[LOG_WARNING] );
-    printf( "  ERROR:   %ld\n", l->contatori[LOG_ERROR] );
+
+    /* Scritto SEMPRE nel file (in coda a tutti gli eventi già
+     * registrati), indipendentemente da anche_su_stdout: e' il resoconto
+     * persistente della run, deve restare disponibile anche quando la
+     * stampa a schermo e' disattivata (vedi doc in log.h). */
+    if ( l->fp != NULL ) {
+        fprintf( l->fp, "\n=== LOG EVENTI (riepilogo) ===\n" );
+        fprintf( l->fp, "  INFO:    %ld\n", l->contatori[LOG_INFO] );
+        fprintf( l->fp, "  WARNING: %ld\n", l->contatori[LOG_WARNING] );
+        fprintf( l->fp, "  ERROR:   %ld\n", l->contatori[LOG_ERROR] );
+        fflush( l->fp );
+    }
+
+    if ( anche_su_stdout ) {
+        printf( "\n=== LOG EVENTI (riepilogo) ===\n" );
+        printf( "  INFO:    %ld\n", l->contatori[LOG_INFO] );
+        printf( "  WARNING: %ld\n", l->contatori[LOG_WARNING] );
+        printf( "  ERROR:   %ld\n", l->contatori[LOG_ERROR] );
+    }
 }
