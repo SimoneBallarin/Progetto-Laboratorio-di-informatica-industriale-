@@ -42,26 +42,40 @@
  *     richiede che il sensore di qualità sull'ISP del guasto sia già
  *     agganciato (vedi punto 3 nel corpo di main).
  *
+ * CARICAMENTO DEGLI OGGETTI IN INGRESSO (B1/B2) - due metodi:
+ *   - PRIMARIO: file oggetti (oggetti_path / oggetti_b2_path), un
+ *     arrivo per riga con il proprio ARRIVAL_STEP - vedi
+ *     parser_caricaOggetti in parser.c. E' il metodo preferito quando
+ *     disponibile: usato di default se il file di default esiste (vedi
+ *     OGGETTI_PATH_DEFAULT/OGGETTI_B2_PATH_DEFAULT e file_esiste() più
+ *     sotto), oppure se un percorso esplicito viene passato da riga di
+ *     comando.
+ *   - SECONDARIO (fallback): generatore casuale storico da
+ *     plant_config (SIM_PEZZI/SIM_PEZZI_B2), usato SOLO se il file
+ *     oggetti corrispondente non esiste, non è stato indicato, oppure
+ *     esiste ma non ha prodotto nessun oggetto valido (file vuoto o
+ *     malformato) - vedi il fallback dentro esegui_simulazione.
+ *
  * MODALITA' D'USO (riga di comando, o argomento nel launch.json di VSCode):
- *   ./main.exe [config_path] [oggetti_path] [scenario_path]
- *       Tutti e tre opzionali (sez. 8/10 della traccia: "poter essere
- *       eseguito da linea di comando indicando almeno i file di
- *       configurazione, oggetti e scenario"):
- *         - config_path: default lib/parser/plant_config_valid.txt
- *         - oggetti_path: NESSUN default - se omesso (o "-"), gli
- *           arrivi sono generati casualmente come sempre (SIM_PEZZI
- *           pezzi a step 0); se specificato, gli arrivi sono letti dal
- *           file, ciascuno al proprio ARRIVAL_STEP (vedi
- *           parser_caricaOggetti in parser.c). Esempio pronto:
- *           lib/parser/oggetti_esempio.txt
- *         - scenario_path: default lib/parser/scenario_nominale.txt
+ *   ./main.exe [config_path] [oggetti_path] [scenario_path] [oggetti_b2_path]
+ *       Tutti opzionali:
+ *         - config_path: default lib/parser/plant_config_layout1.txt
+ *         - oggetti_path: se omesso, si usa OGGETTI_PATH_DEFAULT quando
+ *           quel file esiste (metodo primario); se non esiste, si
+ *           ricade sul generatore casuale (SIM_PEZZI). Passando "-"
+ *           esplicitamente si forza SEMPRE il generatore casuale, anche
+ *           se il file di default esiste.
+ *         - scenario_path: default lib/parser/scenario_nominale_layout1.txt
+ *         - oggetti_b2_path: stessa logica di oggetti_path, ma per B2
+ *           e OGGETTI_B2_PATH_DEFAULT/SIM_PEZZI_B2.
  *       Esempi:
  *         ./main.exe
- *             comportamento storico, config/scenario di default, arrivi casuali
- *         ./main.exe lib/parser/plant_config_valid.txt - lib/parser/scenario_difficile.txt
- *             config esplicito, arrivi casuali ("-"), scenario difficile
- *         ./main.exe lib/parser/plant_config_valid.txt lib/parser/oggetti_esempio.txt
- *             arrivi letti dal file oggetti, scenario di default
+ *             config/scenario di default; oggetti da file di default se
+ *             presenti, altrimenti arrivi casuali
+ *         ./main.exe lib/parser/plant_config_layout1.txt - lib/parser/scenario_difficile_layout1.txt
+ *             config esplicito, arrivi casuali forzati ("-"), scenario difficile
+ *         ./main.exe lib/parser/plant_config_layout1.txt lib/parser/oggetti_esempio.txt
+ *             arrivi letti dal file oggetti indicato, scenario di default
  *
  *       OGNI esecuzione fa SEMPRE, in automatico, senza bisogno di
  *       nessun flag aggiuntivo: simula con la Strategia 1 (priorità +
@@ -94,29 +108,25 @@
  * parametri di simulazione (SIM_STEPS/SIM_PEZZI/SOGLIA_BUFFER/
  * GEN_TARGET_DIMENSIONX/GEN_TARGET_RAGGIO/GEN_ERRORE_PCT). Prima erano
  * tutti #define fissi qui nel main: ora arrivano da qui. */
-#define CONFIG_PATH_DEFAULT  "lib/parser/plant_config_valid.txt"
+#define CONFIG_PATH_DEFAULT  "lib/parser/plant_config_layout2.txt"
 
 /* Percorso di default del file di scenario (sez. 7 della traccia: deve
  * poter cambiare "senza ricompilare il programma" - per questo e'
  * sovrascrivibile da riga di comando, vedi argv[] in main()). */
-#define SCENARIO_PATH_DEFAULT  "lib/parser/scenario_nominale.txt"
+#define SCENARIO_PATH_DEFAULT  "lib/parser/scenario_difficile_layout2.txt"
 
-/* Percorso di default del file oggetti (sez. 8/10 della traccia:
+/* Percorso di default del file oggetti per B1 (sez. 8/10 della traccia:
  * "almeno i file di configurazione, oggetti e scenario" da riga di
- * comando). NON e' usato automaticamente come gli altri due default: se
- * l'utente non passa esplicitamente un percorso oggetti su riga di
- * comando (argv[2], vedi main()), la simulazione ricade sul generatore
- * casuale storico (SIM_PEZZI pezzi con dimensioni intorno a
- * GEN_TARGET_DIMENSIONX/RAGGIO, vedi il blocco "Backlog iniziale" sotto)
- * invece di aprire questo file - tenuto qui solo come constante pronta
- * da passare esplicitamente (es. da .vscode/launch.json) per provare il
- * caricamento da file senza doverne scrivere uno nuovo. */
-#define OGGETTI_PATH_DEFAULT  "lib/parser/oggetti_esempio.txt"
+ * comando). E' il metodo PRIMARIO di caricamento arrivi: se questo file
+ * esiste (vedi file_esiste()) e non e' stato passato un percorso
+ * esplicito da riga di comando, viene usato automaticamente al posto
+ * del generatore casuale storico (SIM_PEZZI). Se punti i tuoi file
+ * oggetti altrove, aggiorna semplicemente questa define. */
+#define OGGETTI_PATH_DEFAULT "lib/parser/oggetti_esempio.txt"
 
 /* Stessa logica di OGGETTI_PATH_DEFAULT sopra, ma per B2 (argv[4], vedi
- * main()): NON usata automaticamente, solo una constante pronta per
- * provare il caricamento da file senza doverne scrivere uno nuovo. */
-#define OGGETTI_B2_PATH_DEFAULT  "lib/parser/oggetti_b2_esempio.txt"
+ * main()) e SIM_PEZZI_B2. */
+#define OGGETTI_B2_PATH_DEFAULT  ""
 
 /* Percorso del file di log eventi (sez. 2.2/7 del progetto: "log degli
  * eventi rilevanti", errori "riportati nel log"). */
@@ -149,25 +159,59 @@
  * se srand(1) fosse stata chiamata). */
 #define SEED_ESECUZIONE  1u
 
-/* Genera un pezzo di esempio in ingresso a B1, alternando materiale e
- * "conformita'" (vicinanza al target di ISP2), giusto per vedere la
- * linea muoversi. Chiamata dal ciclo di simulazione principale, una
- * volta per ogni pezzo, passando lo STEP REALE corrente (non un indice
- * di generazione): cosi' object_getStepCreation rispecchia il vero
- * istante di ingresso nella cella, e stepOut - stepCreation e' un tempo
- * di attraversamento genuino. Il vero flusso di arrivi verra' dal file
- * di configurazione, quando il parser sara' pronto (vedi
- * parser_caricaOggetti, gia' presente in libreria ma non ancora
- * agganciato qui). */
+/**
+ * @brief Vero se il percorso indica un file apribile in lettura, falso
+ *        altrimenti (percorso NULL, file assente, permessi mancanti...).
+ *
+ * Usata SOLO per decidere se il default del file oggetti
+ * (OGGETTI_PATH_DEFAULT / OGGETTI_B2_PATH_DEFAULT) va usato in automatico
+ * come metodo PRIMARIO quando l'utente non passa un percorso esplicito
+ * da riga di comando: se il file non esiste, si ricade in modo
+ * trasparente sul generatore casuale (metodo secondario, basato su
+ * plant_config), senza che l'utente debba passare "-" a mano ogni
+ * volta. Non e' pero' l'unico punto di fallback: anche con un percorso
+ * (di default o esplicito) che punta a un file presente ma vuoto o
+ * malformato, esegui_simulazione ricade comunque sul generatore casuale
+ * (vedi commento su parser_caricaOggetti piu' sotto).
+ */
+static bool file_esiste( const char *path )
+{
+    FILE *f;
+
+    if ( path == NULL ) {
+        return false;
+    }
+    f = fopen( path, "r" );
+    if ( f == NULL ) {
+        return false;
+    }
+    fclose( f );
+    return true;
+}
+
 /**
  * @brief Crea un oggetto di prova e lo inserisce in un buffer di
  *        ingresso qualunque (parametro bufferID: "B1" per il backlog
  *        storico, "B2" per il pre-caricamento opzionale - vedi
- *        SIM_PEZZI_B2 in plant_config_valid.txt).
+ *        SIM_PEZZI_B2 in plant_config_layout1.txt).
  *
- * Generalizzata da una versione precedente che scriveva "B1" fisso in
- * tre punti diversi della funzione: usata ora anche per B2, senza
- * duplicare la logica.
+ * Generatore casuale di fallback, usato solo quando non e' disponibile
+ * un file oggetti esplicito (vedi parser_caricaOggetti, il metodo
+ * primario di caricamento arrivi). Va chiamata passando lo STEP REALE
+ * corrente (non un indice di generazione): cosi' object_getStepCreation
+ * rispecchia il vero istante di ingresso nella cella, e
+ * stepOut - stepCreation e' un tempo di attraversamento genuino.
+ * @param cell Cella in cui creare l'oggetto.
+ * @param stats Statistiche su cui registrare un eventuale blocco per
+ *        buffer pieno (vedi statistiche_registraBlocco).
+ * @param ctrl Controllore su cui schedulare l'arrivo.
+ * @param log Log su cui registrare l'evento.
+ * @param bufferID Buffer di ingresso di destinazione ("B1" o "B2").
+ * @param step_arrivo Step di simulazione in cui l'oggetto deve arrivare.
+ * @param id Identificativo del nuovo oggetto.
+ * @param tipo Tipo di materiale ('A' o 'B').
+ * @param dimensionX Dimensione X del nuovo oggetto.
+ * @param raggio Raggio del nuovo oggetto.
  */
 static void genera_arrivi_esempio( cell_t *cell, statistiche_t *stats, controllore_t *ctrl, log_t *log,
                                     const char *bufferID, int step_arrivo, const char *id, char tipo,
@@ -304,10 +348,16 @@ static void libera_tutti_gli_oggetti( cell_t *cell )
  * chiama questa funzione due volte) - vedi SEED_ESECUZIONE.
  *
  * @param config_path Percorso del file di configurazione impianto.
- * @param oggetti_path Percorso del file oggetti in ingresso, o NULL per
- *        usare il generatore casuale storico (vedi "Backlog iniziale"
- *        nel corpo della funzione) invece di leggere da file.
+ * @param oggetti_path Percorso del file oggetti in ingresso per B1
+ *        (metodo PRIMARIO), o NULL per usare direttamente il
+ *        generatore casuale storico (metodo SECONDARIO/fallback, vedi
+ *        "Backlog iniziale" nel corpo della funzione). Se non NULL ma
+ *        il caricamento non produce nessun oggetto (file vuoto,
+ *        malformato o comunque non trovato da parser_caricaOggetti), si
+ *        ricade comunque sul generatore casuale.
  * @param scenario_path Percorso del file di scenario (guasto sensore).
+ * @param oggetti_b2_path Come oggetti_path, ma per il pre-caricamento
+ *        opzionale di B2 (vedi SIM_PEZZI_B2).
  * @param strategia Strategia di controllo da usare per questa esecuzione.
  * @param seed Seed per srand(), riapplicato a inizio funzione.
  * @param log_path Percorso del file di log eventi per questa esecuzione.
@@ -324,9 +374,8 @@ static void libera_tutti_gli_oggetti( cell_t *cell )
  *        raggiungere il ciclo di simulazione (vedi valore di ritorno).
  * @return OP_SUCCESS se l'esecuzione e' arrivata in fondo e
  *         out_riepilogo e' stato scritto, un codice ERR_* altrimenti
- *         (vedi errors.h) - stessa casistica di fallimento gestita nella
- *         versione originale del main (cella non creata, config vuota,
- *         nessun attuatore collegato).
+ *         (vedi errors.h): cella non creata, file di configurazione
+ *         vuoto/non apribile, o nessun attuatore collegato.
  */
 static short int esegui_simulazione( const char *config_path, const char *oggetti_path, const char *scenario_path,
                                       const char *oggetti_b2_path,
@@ -406,16 +455,6 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
                 ( strategia == STRATEGIA_FCFS ) ? "Strategia 2 (FCFS)" : "Strategia 1 (priorita' + buffer-aware)" );
 
     stats = statistiche_create( &err );
-    statistiche_monitoraBuffer( stats, "B1" );
-    statistiche_monitoraBuffer( stats, "B2" );
-    statistiche_monitoraBuffer( stats, "B_rame" );
-    statistiche_monitoraBuffer( stats, "B_Alacciaio" );
-    statistiche_monitoraBuffer( stats, "B_riqualifica" );
-    statistiche_monitoraBuffer( stats, "B_TRASH" );
-    statistiche_monitoraMotore( stats, "M" );
-    statistiche_monitoraMotore( stats, "N1" );
-    statistiche_monitoraISP( stats, "ISP1" );
-    statistiche_monitoraISP( stats, "ISP2" );
     statistiche_monitoraSensorePresenza( stats, "B1" );
 
     /* 2. Motore/Deviatore dal file di configurazione. */
@@ -438,6 +477,74 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
         log_destroy( log );
         registry_clear();
         return ERR_NOT_FOUND;
+    }
+
+    /* Monitoraggio dinamico: buffer/ISP/motori vengono scoperti dalla
+     * cella COSI' COM'E' STATA COSTRUITA dal parser, invece di elencare
+     * qui nomi fissi (storicamente "B1"/"B2"/"M"/"N1"/"ISP1"/"ISP2",
+     * validi solo per il layout 1) - un plant_config diverso (es.
+     * layout 2, vedi README) cambia solo i CONNECT/nomi nel file, senza
+     * bisogno di toccare anche questa lista. Buffer e ISP si monitorano
+     * sempre tutti (statistiche_stampa gestisce gia' correttamente
+     * un'ISP senza sensore di qualita' agganciato, stampando un avviso
+     * invece di un dato inventato); i motori solo per i nastri/macchine
+     * che ne hanno davvero uno agganciato (controllore_haMotoreCollegato),
+     * altrimenti statistiche_stampa mostrerebbe ON/OFF negativi (codice
+     * ERR_NOT_FOUND) per ogni nastro/macchina senza motore. */
+    {
+        int nEntita = cell_getBufferCount( cell );
+        int idx;
+        char id[IDLENGTH];
+        for ( idx = 0; idx < nEntita; idx++ ) {
+            if ( cell_getBufferIDAt( cell, idx, id ) == OP_SUCCESS ) {
+                statistiche_monitoraBuffer( stats, id );
+            }
+        }
+
+        nEntita = cell_getISPCount( cell );
+        for ( idx = 0; idx < nEntita; idx++ ) {
+            if ( cell_getISPIDAt( cell, idx, id ) == OP_SUCCESS ) {
+                statistiche_monitoraISP( stats, id );
+            }
+        }
+
+        nEntita = cell_getMachineCount( cell );
+        for ( idx = 0; idx < nEntita; idx++ ) {
+            if ( cell_getMachineIDAt( cell, idx, id ) == OP_SUCCESS && controllore_haMotoreCollegato( ctrl, id ) ) {
+                statistiche_monitoraMotore( stats, id );
+            }
+        }
+
+        nEntita = cell_getNastroCount( cell );
+        for ( idx = 0; idx < nEntita; idx++ ) {
+            if ( cell_getNastroIDAt( cell, idx, id ) == OP_SUCCESS && controllore_haMotoreCollegato( ctrl, id ) ) {
+                statistiche_monitoraMotore( stats, id );
+            }
+        }
+    }
+
+    /* Validazione di coerenza della topologia (cell_validateAll, vedi
+     * cell.h): controlla, tra le altre cose, che ogni buffer/macchina/
+     * ISP/nastro con 2+ uscite abbia almeno un Deviatore agganciato
+     * (sez. 5.2 della traccia). Va fatta DOPO parser_collegaAttuatori
+     * qui sopra (che collega il Deviatore), altrimenti risulterebbe
+     * sempre assente. Prima di questa modifica la funzione esisteva ma
+     * non veniva mai chiamata da main.c (solo da un file di prova non
+     * compilato, build/programma_prova.c): un impianto con un branch
+     * privo di Deviatore passava quindi inosservato invece di essere
+     * segnalato. Trattata come avviso non bloccante (non ERR_NOT_FOUND
+     * come sopra): un branch senza Deviatore e' comunque instradabile
+     * (routeObject/genericInsert funzionano lo stesso, semplicemente
+     * senza il vincolo del tempo minimo di commutazione), quindi non
+     * vale la pena interrompere l'intera simulazione per questo. */
+    {
+        short int err_validazione = cell_validateAll( cell );
+        if ( err_validazione != OP_SUCCESS ) {
+            fprintf( stderr, "Attenzione: cell_validateAll ha rilevato un problema di coerenza nella topologia "
+                     "(codice %d) - probabile branch (2+ uscite) senza Deviatore agganciato\n", err_validazione );
+            log_evento( log, -1, LOG_WARNING,
+                        "cell_validateAll: problema di coerenza nella topologia (codice %d)", err_validazione );
+        }
     }
 
     /* 3. Scenario (guasto abilitato/disabilitato + i suoi tempi, sez. 5.3
@@ -476,16 +583,22 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
         }
     }
 
-    /* Backlog iniziale (sez. 2.2/6/8 del progetto): se e' stato passato
-     * un file oggetti (oggetti_path != NULL), i pezzi arrivano da li',
-     * ciascuno al proprio ARRIVAL_STEP (vedi parser_caricaOggetti,
-     * schedulazione reale nel tempo). Altrimenti si ricade sul
-     * generatore casuale storico: tutti i pezzi di prova arrivano in un
-     * unico burst allo STEP REALE 0 - non prima del ciclo con uno
-     * pseudo-step come nella versione con il bug (il loro indice di
-     * generazione, che non corrispondeva a nessun istante reale), ma
-     * come primo evento del ciclo di simulazione vero e proprio. Questo
-     * fa partire B1 gia' pieno, cosi' che buffer_removeObject scelga
+    /* Backlog iniziale di B1 (sez. 2.2/6/8 del progetto): DUE metodi.
+     *   - PRIMARIO: se e' stato passato un file oggetti (oggetti_path
+     *     != NULL), i pezzi arrivano da li', ciascuno al proprio
+     *     ARRIVAL_STEP (vedi parser_caricaOggetti, schedulazione reale
+     *     nel tempo).
+     *   - SECONDARIO/fallback: generatore casuale storico, usato se
+     *     oggetti_path e' NULL FIN DALL'INIZIO (nessun file indicato/
+     *     trovato), OPPURE se il file era indicato ma
+     *     parser_caricaOggetti non ha caricato nessun oggetto (file
+     *     assente, vuoto o malformato) - in quel caso oggetti_path
+     *     viene azzerato qui sotto per far scattare comunque il
+     *     fallback, invece di far partire la simulazione senza arrivi.
+     *
+     * Con il generatore casuale, tutti i pezzi di prova arrivano in un
+     * unico burst allo STEP REALE 0 (SIM_PEZZI pezzi, vedi sim.n_pezzi_prova):
+     * questo fa partire B1 gia' pieno, cosi' che buffer_removeObject scelga
      * davvero tra piu' candidati in base alla priorita' (Strategia 1,
      * sez. 4.1) invece di trovare quasi sempre un solo pezzo in coda, e
      * le statistiche di occupazione buffer partono da un livello
@@ -499,24 +612,33 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
         printf( "File oggetti '%s': %d oggetti schedulati\n", oggetti_path, oggetti_caricati );
         log_evento( log, -1, LOG_INFO, "File oggetti '%s': %d oggetti schedulati", oggetti_path, oggetti_caricati );
         if ( oggetti_caricati == 0 ) {
-            fprintf( stderr, "Attenzione: nessun oggetto caricato da '%s', la simulazione partira' senza arrivi\n",
+            /* Metodo primario fallito: file assente, vuoto o
+             * malformato. Si ricade sul metodo secondario (generatore
+             * casuale da plant_config) azzerando oggetti_path, cosi' da
+             * entrare nel blocco "if ( oggetti_path == NULL )" qui
+             * sotto - invece di far partire la simulazione senza alcun
+             * arrivo in B1. */
+            fprintf( stderr, "Attenzione: nessun oggetto caricato da '%s', si ricade sul generatore casuale (SIM_PEZZI)\n",
                      oggetti_path );
-            log_evento( log, -1, LOG_WARNING, "Nessun oggetto caricato da '%s'", oggetti_path );
-        }
-        /* SIM_PEZZI (config impianto) e' letto SEMPRE da
-         * parser_caricaSimulazione (sim.n_pezzi_prova), ma usato SOLO
-         * nel ramo "else" sotto (generatore casuale) - con un file
-         * oggetti esplicito viene semplicemente ignorato. Avviso
-         * esplicito qui, altrimenti chi cambia SIM_PEZZI aspettandosi un
-         * effetto (avendo pero' anche passato un file oggetti) resta
-         * confuso nel non vederne nessuno. */
-        if ( sim.n_pezzi_prova > 0 ) {
+            log_evento( log, -1, LOG_WARNING, "Nessun oggetto caricato da '%s': fallback su generatore casuale",
+                        oggetti_path );
+            oggetti_path = NULL;
+        } else if ( sim.n_pezzi_prova > 0 ) {
+            /* SIM_PEZZI (config impianto) e' letto SEMPRE da
+             * parser_caricaSimulazione (sim.n_pezzi_prova), ma usato
+             * SOLO quando si ricade sul generatore casuale - con un
+             * file oggetti caricato con successo viene semplicemente
+             * ignorato. Avviso esplicito qui, altrimenti chi cambia
+             * SIM_PEZZI aspettandosi un effetto (avendo pero' anche un
+             * file oggetti valido) resta confuso nel non vederne
+             * nessuno. */
             printf( "Nota: SIM_PEZZI=%d nel file di configurazione viene ignorato (in uso il file oggetti)\n",
                     sim.n_pezzi_prova );
             log_evento( log, -1, LOG_INFO, "SIM_PEZZI=%d ignorato: in uso il file oggetti '%s'",
                         sim.n_pezzi_prova, oggetti_path );
         }
-    } else {
+    }
+    if ( oggetti_path == NULL ) {
         char id[16];
         int idx;
         for ( idx = 0; idx < sim.n_pezzi_prova; idx++ ) {
@@ -538,39 +660,48 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
         }
     }
 
-    /* Pre-caricamento opzionale di B2: due modi, mutuamente esclusivi
-     * (stessa logica di B1 sopra) - se e' stato passato un file oggetti
-     * per B2 (oggetti_b2_path != NULL), i pezzi arrivano da li' (ciascuno
-     * al proprio ARRIVAL_STEP, stesso meccanismo generico di
-     * parser_caricaOggetti usato per B1 - la funzione accetta gia'
-     * QUALUNQUE buffer di destinazione, non solo "B1"); altrimenti si
-     * ricade sul generatore casuale storico (SIM_PEZZI_B2). Applicato
-     * SEMPRE, indipendentemente da come e' stato riempito B1 sopra: i
-     * due backlog (B1/B2) sono completamente indipendenti tra loro. */
+    /* Pre-caricamento opzionale di B2: stessa logica a due metodi di B1
+     * sopra (PRIMARIO file oggetti / SECONDARIO generatore casuale
+     * SIM_PEZZI_B2), completamente indipendente da come e' stato
+     * riempito B1. parser_caricaOggetti accetta gia' QUALUNQUE buffer
+     * di destinazione, non solo "B1", quindi la stessa funzione viene
+     * riusata passando "B2". */
     if ( oggetti_b2_path != NULL ) {
         int oggetti_b2_caricati = parser_caricaOggetti( cell, ctrl, oggetti_b2_path, "B2", &err );
         printf( "File oggetti B2 '%s': %d oggetti schedulati\n", oggetti_b2_path, oggetti_b2_caricati );
         log_evento( log, -1, LOG_INFO, "File oggetti B2 '%s': %d oggetti schedulati",
                     oggetti_b2_path, oggetti_b2_caricati );
         if ( oggetti_b2_caricati == 0 ) {
-            fprintf( stderr, "Attenzione: nessun oggetto caricato da '%s' per B2\n", oggetti_b2_path );
-            log_evento( log, -1, LOG_WARNING, "Nessun oggetto caricato da '%s' per B2", oggetti_b2_path );
-        }
-        if ( sim.n_pezzi_prova_b2 > 0 ) {
+            /* Stesso fallback del blocco B1 sopra: metodo primario
+             * fallito, si ricade sul generatore casuale SIM_PEZZI_B2
+             * azzerando oggetti_b2_path. */
+            fprintf( stderr, "Attenzione: nessun oggetto caricato da '%s' per B2, si ricade sul generatore casuale (SIM_PEZZI_B2)\n",
+                     oggetti_b2_path );
+            log_evento( log, -1, LOG_WARNING, "Nessun oggetto caricato da '%s' per B2: fallback su generatore casuale",
+                        oggetti_b2_path );
+            oggetti_b2_path = NULL;
+        } else if ( sim.n_pezzi_prova_b2 > 0 ) {
             printf( "Nota: SIM_PEZZI_B2=%d nel file di configurazione viene ignorato (in uso il file oggetti per B2)\n",
                     sim.n_pezzi_prova_b2 );
             log_evento( log, -1, LOG_INFO, "SIM_PEZZI_B2=%d ignorato: in uso il file oggetti B2 '%s'",
                         sim.n_pezzi_prova_b2, oggetti_b2_path );
         }
-    } else if ( sim.n_pezzi_prova_b2 > 0 ) {
-        /* Generatore casuale storico: stessa logica di generazione usata
-         * per B1 (stesso target/errore percentuale), dato che un pezzo
-         * pre-caricato in B2 rappresenta un pezzo che ha gia'
+    }
+    if ( oggetti_b2_path == NULL && sim.n_pezzi_prova_b2 > 0 ) {
+        /* Generatore casuale di fallback per il pre-caricamento di B2:
+         * un pezzo pre-caricato qui rappresenta un pezzo che ha gia'
          * virtualmente attraversato ISP1/N1/M prima dell'inizio della
-         * simulazione, quindi non ha senso dargli caratteristiche
-         * diverse da quelle generate per l'ingresso in B1. */
+         * simulazione, quindi le sue dimensioni vanno generate intorno
+         * al target POST-lavorazione (target grezzo di ingresso meno la
+         * riduzione fissa di M, vedi MACHINE_DLAVORATO/MACHINE_RLAVORATO
+         * in machine.h), non intorno al target grezzo usato per B1 -
+         * altrimenti ISP2 (a valle di B2) classificherebbe questi pezzi
+         * come sistematicamente fuori tolleranza. */
         char id[16];
         int idx;
+        double target_dimensionX_postM = sim.gen_target_dimensionX - MACHINE_DLAVORATO;
+        double target_raggio_postM     = sim.gen_target_raggio     - MACHINE_RLAVORATO;
+
         printf( "Pre-caricamento B2: %d pezzi (SIM_PEZZI_B2)\n", sim.n_pezzi_prova_b2 );
         log_evento( log, -1, LOG_INFO, "Pre-caricamento B2: %d pezzi (SIM_PEZZI_B2)", sim.n_pezzi_prova_b2 );
         for ( idx = 0; idx < sim.n_pezzi_prova_b2; idx++ ) {
@@ -581,8 +712,8 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
                 tipo = 'B';
             }
             double scarto_pct = (double) ( rand() % ( 2 * sim.gen_errore_pct + 1 ) - sim.gen_errore_pct );
-            double dimensionX = sim.gen_target_dimensionX + ( sim.gen_target_dimensionX * scarto_pct / 100.0 );
-            double raggio     = sim.gen_target_raggio     + ( sim.gen_target_raggio     * scarto_pct / 100.0 );
+            double dimensionX = target_dimensionX_postM + ( target_dimensionX_postM * scarto_pct / 100.0 );
+            double raggio     = target_raggio_postM     + ( target_raggio_postM     * scarto_pct / 100.0 );
 
             snprintf( id, sizeof( id ), "PB2_%d", idx + 1 );
             genera_arrivi_esempio( cell, stats, ctrl, log, "B2", 0, id, tipo, dimensionX, raggio );
@@ -590,8 +721,31 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
     }
 
     if ( stampa_stato_console ) {
+        /* Ammette SUBITO gli arrivi schedulati con ARRIVAL_STEP<=0 (in
+         * pratica quelli con ARRIVAL_STEP esattamente 0, dato che il
+         * parser scarta gli step negativi): concettualmente sono "già
+         * presenti all'istante zero", quindi devono comparire nei
+         * buffer qui, prima della stampa - non solo dentro il primo
+         * controllore_step del ciclo sotto. E' sicuro farlo qui: gli
+         * oggetti ammessi vengono tolti dalla coda interna, quindi il
+         * primo controllore_step(ctrl, 0) del ciclo non li riammette una
+         * seconda volta (vedi doc di controllore_ammettiArriviSchedulati). */
+        controllore_ammettiArriviSchedulati( ctrl, 0 );
+
         printf( "=== Stato iniziale (dopo il backlog di ingresso, prima di far girare la simulazione) ===\n" );
         controllore_print( ctrl );
+        /* I pezzi con ARRIVAL_STEP=0 sono gia' stati ammessi qui sopra e
+         * compaiono correttamente nei buffer stampati da
+         * controllore_print. Restano invece "in coda" (non ancora nei
+         * buffer) solo quelli con ARRIVAL_STEP futuro (> 0): verranno
+         * ammessi ciascuno al proprio step durante il ciclo di
+         * simulazione qui sotto - questo contatore riflette quindi solo
+         * loro, non il totale originale del file oggetti. */
+        int arriviInAttesa = controllore_getArriviSchedulatiCount( ctrl );
+        if ( arriviInAttesa > 0 ) {
+            printf( "(%d pezzi schedulati da file oggetti, non ancora entrati: verranno ammessi ciascuno al proprio ARRIVAL_STEP durante la simulazione)\n",
+                    arriviInAttesa );
+        }
         printf( "\n" );
     }
 
@@ -660,21 +814,37 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
 
     // STATISTICHE //
     {
-        const char *buffer_terminali[] = { "B_Alacciaio", "B_riqualifica", "B_TRASH", "B_rame" };
-        int nb = (int) ( sizeof( buffer_terminali ) / sizeof( buffer_terminali[0] ) );
+        /* Un buffer e' "terminale" (destinazione finale di un pezzo
+         * completato) se non ha NESSUNA uscita collegata (vedi
+         * buffer_getOutputCount) - stesso identico criterio gia' usato
+         * INTERNAMENTE da Controllore.c (segnaCompletatoSeTerminale)
+         * per decidere quando incrementare controllore_getCompletati().
+         * Scoperto dinamicamente scandendo tutti i buffer della cella,
+         * invece di elencare qui nomi fissi (storicamente
+         * "B_Alacciaio"/"B_riqualifica"/"B_TRASH"/"B_rame", validi solo
+         * per i layout che usano proprio quei nomi per le destinazioni
+         * finali): un plant_config con buffer terminali diversi (nomi o
+         * numero) viene quindi gestito correttamente senza toccare
+         * main.c, ed e' garantito per costruzione che
+         * statistiche_registraCompletamento venga chiamata esattamente
+         * sugli stessi buffer che hanno gia' incrementato
+         * controllore_getCompletati() durante la simulazione. */
+        int nb = cell_getBufferCount( cell );
         int bi;
+        char id[IDLENGTH];
         for ( bi = 0; bi < nb; bi++ ) {
-            buffer_t *b = cell_getBuffer( cell, buffer_terminali[bi] );
-            if ( b == NULL ) { continue; }
+            if ( cell_getBufferIDAt( cell, bi, id ) != OP_SUCCESS ) { continue; }
+            buffer_t *b = cell_getBuffer( cell, id );
+            if ( b == NULL || buffer_getOutputCount( b ) != 0 ) { continue; }
             bufferObj_t *cur = b->head;
             while ( cur != NULL ) {
-                statistiche_registraCompletamento( stats, cur->dato, 40 ); /* 40 = scadenza in passi, a piacere/ soglia di completamento */
+                statistiche_registraCompletamento( stats, cur->dato, sim.scadenza_step ); /* vedi SCADENZA_STEP nel plant_config, default 40 */
                 cur = cur->next;
             }
         }
     }
 
-    statistiche_stampa( stats, ctrl, sim.n_step_simulazione, statistiche_path );
+    statistiche_stampa( stats, ctrl, sim.n_step_simulazione, statistiche_path, stampa_stato_console );
 
     if ( out_riepilogo != NULL ) {
         statistiche_getRiepilogo( stats, ctrl, out_riepilogo );
@@ -682,7 +852,7 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
 
     statistiche_destroy( stats );
 
-    log_stampaRiepilogo( log );
+    log_stampaRiepilogo( log, stampa_stato_console );
     log_destroy( log );
 
     /* Libera tutti gli object_t rimasti nella cella (buffer, nastri,
@@ -788,19 +958,19 @@ int main( int argc, char *argv[] )
      *   ./main.exe [config_path] [oggetti_path] [scenario_path] [oggetti_b2_path]
      * Tutti e quattro opzionali, con default ragionevoli se omessi (vedi
      * CONFIG_PATH_DEFAULT/SCENARIO_PATH_DEFAULT sopra) - "./main.exe"
-     * senza argomenti continua a funzionare come sempre.
+     * senza argomenti continua a funzionare.
      *
-     * oggetti_path e oggetti_b2_path sono casi speciali: se omessi (o
-     * passati come "-"), NESSUN file oggetti viene aperto e si ricade
-     * sul generatore casuale storico (SIM_PEZZI/SIM_PEZZI_B2, vedi
-     * "Backlog iniziale" in esegui_simulazione) - non sono file "di
-     * default" come gli altri due, perche' introdurre un file vero
-     * cambia il comportamento della simulazione (arrivi scaglionati nel
-     * tempo invece che tutti a step 0): vanno scelti esplicitamente. Per
-     * provare il caricamento da file senza scriverne uno nuovo, passare
-     * OGGETTI_PATH_DEFAULT ("lib/parser/oggetti_esempio.txt") come
-     * secondo argomento, o OGGETTI_B2_PATH_DEFAULT
-     * ("lib/parser/oggetti_b2_esempio.txt") come quarto.
+     * oggetti_path e oggetti_b2_path sono casi un po' diversi dagli
+     * altri due default: sono il metodo PRIMARIO di caricamento arrivi,
+     * quindi se l'utente non passa nulla da riga di comando si usa
+     * comunque il rispettivo file di default (OGGETTI_PATH_DEFAULT /
+     * OGGETTI_B2_PATH_DEFAULT) SE quel file esiste (vedi file_esiste());
+     * se non esiste, si ricade sul generatore casuale storico
+     * (SIM_PEZZI/SIM_PEZZI_B2, vedi "Backlog iniziale" in
+     * esegui_simulazione). Passando esplicitamente "-" come argomento si
+     * forza SEMPRE il generatore casuale, anche se il file di default
+     * esiste - utile per confrontare i due metodi senza dover spostare/
+     * rinominare i file.
      *
      * oggetti_b2_path e' stato aggiunto DOPO scenario_path (non subito
      * dopo oggetti_path) per non spostare la posizione degli argomenti
@@ -819,14 +989,24 @@ int main( int argc, char *argv[] )
      *      e stampa/scrive un confronto affiancato tra le due (sez.
      *      "confronto tra due esecuzioni o due strategie" della traccia). */
     const char *config_path = ( argc > 1 ) ? argv[1] : CONFIG_PATH_DEFAULT;
+
     const char *oggetti_path = NULL;
     if ( argc > 2 && argv[2][0] != '\0' && strcmp( argv[2], "-" ) != 0 ) {
         oggetti_path = argv[2];
+    } else if ( argc <= 2 && file_esiste( OGGETTI_PATH_DEFAULT ) ) {
+        /* Nessun argomento esplicito: il file oggetti di default esiste,
+         * quindi va usato come metodo PRIMARIO al posto del generatore
+         * casuale. */
+        oggetti_path = OGGETTI_PATH_DEFAULT;
     }
+
     const char *scenario_path = ( argc > 3 ) ? argv[3] : SCENARIO_PATH_DEFAULT;
+
     const char *oggetti_b2_path = NULL;
     if ( argc > 4 && argv[4][0] != '\0' && strcmp( argv[4], "-" ) != 0 ) {
         oggetti_b2_path = argv[4];
+    } else if ( argc <= 4 && file_esiste( OGGETTI_B2_PATH_DEFAULT ) ) {
+        oggetti_b2_path = OGGETTI_B2_PATH_DEFAULT;
     }
 
     SimulationConfig sim_per_report;
