@@ -410,7 +410,7 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
 
     /* 0. Parametri di simulazione dal file di configurazione (prima
      * erano #define fissi qui nel main). */
-    parser_caricaSimulazione( config_path, &sim, &err );
+    parser_caricaSimulazione( config_path, &sim_config, &err );
 
     cell = cell_create();
     if ( cell == NULL ) {
@@ -432,7 +432,7 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
         return ERR_NOT_FOUND;
     }
 
-    ctrl = controllore_create( cell, sim.soglia_buffer, &err );
+    ctrl = controllore_create( cell, sim_config.soglia_buffer, &err );
     if ( ctrl == NULL ) {
         fprintf( stderr, "Errore creazione controllore: %d\n", err );
         log_evento( log, -1, LOG_ERROR, "Errore creazione controllore (codice %d)", err );
@@ -623,7 +623,7 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
             log_evento( log, -1, LOG_WARNING, "Nessun oggetto caricato da '%s': fallback su generatore casuale",
                         oggetti_path );
             oggetti_path = NULL;
-        } else if ( sim.n_pezzi_prova > 0 ) {
+        } else if ( sim_config.n_pezzi_prova > 0 ) {
             /* SIM_PEZZI (config impianto) e' letto SEMPRE da
              * parser_caricaSimulazione (sim.n_pezzi_prova), ma usato
              * SOLO quando si ricade sul generatore casuale - con un
@@ -633,15 +633,15 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
              * file oggetti valido) resta confuso nel non vederne
              * nessuno. */
             printf( "Nota: SIM_PEZZI=%d nel file di configurazione viene ignorato (in uso il file oggetti)\n",
-                    sim.n_pezzi_prova );
+                    sim_config.n_pezzi_prova );
             log_evento( log, -1, LOG_INFO, "SIM_PEZZI=%d ignorato: in uso il file oggetti '%s'",
-                        sim.n_pezzi_prova, oggetti_path );
+                        sim_config.n_pezzi_prova, oggetti_path );
         }
     }
     if ( oggetti_path == NULL ) {
         char id[16];
         int idx;
-        for ( idx = 0; idx < sim.n_pezzi_prova; idx++ ) {
+        for ( idx = 0; idx < sim_config.n_pezzi_prova; idx++ ) {
             char tipo;
             if ( rand() % 2 == 0 ) {
                 tipo = 'A';
@@ -651,9 +651,9 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
             /* Errore casuale in un intervallo di +/- sim.gen_errore_pct
              * punti percentuali (stessa logica di Simone, ma con
              * l'ampiezza letta da file invece che fissa a 2). */
-            double scarto_pct = (double) ( rand() % ( 2 * sim.gen_errore_pct + 1 ) - sim.gen_errore_pct );
-            double dimensionX = sim.gen_target_dimensionX + ( sim.gen_target_dimensionX * scarto_pct / 100.0 );
-            double raggio     = sim.gen_target_raggio     + ( sim.gen_target_raggio     * scarto_pct / 100.0 );
+            double scarto_pct = (double) ( rand() % ( 2 * sim_config.gen_errore_pct + 1 ) - sim_config.gen_errore_pct );
+            double dimensionX = sim_config.gen_target_dimensionX + ( sim_config.gen_target_dimensionX * scarto_pct / 100.0 );
+            double raggio     = sim_config.gen_target_raggio     + ( sim_config.gen_target_raggio     * scarto_pct / 100.0 );
 
             snprintf( id, sizeof( id ), "P%d", idx + 1 );
             genera_arrivi_esempio( cell, stats, ctrl, log, "B1", 0, id, tipo, dimensionX, raggio );
@@ -680,14 +680,14 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
             log_evento( log, -1, LOG_WARNING, "Nessun oggetto caricato da '%s' per B2: fallback su generatore casuale",
                         oggetti_b2_path );
             oggetti_b2_path = NULL;
-        } else if ( sim.n_pezzi_prova_b2 > 0 ) {
+        } else if ( sim_config.n_pezzi_prova_b2 > 0 ) {
             printf( "Nota: SIM_PEZZI_B2=%d nel file di configurazione viene ignorato (in uso il file oggetti per B2)\n",
-                    sim.n_pezzi_prova_b2 );
+                    sim_config.n_pezzi_prova_b2 );
             log_evento( log, -1, LOG_INFO, "SIM_PEZZI_B2=%d ignorato: in uso il file oggetti B2 '%s'",
-                        sim.n_pezzi_prova_b2, oggetti_b2_path );
+                        sim_config.n_pezzi_prova_b2, oggetti_b2_path );
         }
     }
-    if ( oggetti_b2_path == NULL && sim.n_pezzi_prova_b2 > 0 ) {
+    if ( oggetti_b2_path == NULL && sim_config.n_pezzi_prova_b2 > 0 ) {
         /* Generatore casuale di fallback per il pre-caricamento di B2:
          * un pezzo pre-caricato qui rappresenta un pezzo che ha gia'
          * virtualmente attraversato ISP1/N1/M prima dell'inizio della
@@ -699,19 +699,19 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
          * come sistematicamente fuori tolleranza. */
         char id[16];
         int idx;
-        double target_dimensionX_postM = sim.gen_target_dimensionX - MACHINE_DLAVORATO;
-        double target_raggio_postM     = sim.gen_target_raggio     - MACHINE_RLAVORATO;
+        double target_dimensionX_postM = sim_config.gen_target_dimensionX - MACHINE_DLAVORATO;
+        double target_raggio_postM     = sim_config.gen_target_raggio     - MACHINE_RLAVORATO;
 
-        printf( "Pre-caricamento B2: %d pezzi (SIM_PEZZI_B2)\n", sim.n_pezzi_prova_b2 );
-        log_evento( log, -1, LOG_INFO, "Pre-caricamento B2: %d pezzi (SIM_PEZZI_B2)", sim.n_pezzi_prova_b2 );
-        for ( idx = 0; idx < sim.n_pezzi_prova_b2; idx++ ) {
+        printf( "Pre-caricamento B2: %d pezzi (SIM_PEZZI_B2)\n", sim_config.n_pezzi_prova_b2 );
+        log_evento( log, -1, LOG_INFO, "Pre-caricamento B2: %d pezzi (SIM_PEZZI_B2)", sim_config.n_pezzi_prova_b2 );
+        for ( idx = 0; idx < sim_config.n_pezzi_prova_b2; idx++ ) {
             char tipo;
             if ( rand() % 2 == 0 ) {
                 tipo = 'A';
             } else {
                 tipo = 'B';
             }
-            double scarto_pct = (double) ( rand() % ( 2 * sim.gen_errore_pct + 1 ) - sim.gen_errore_pct );
+            double scarto_pct = (double) ( rand() % ( 2 * sim_config.gen_errore_pct + 1 ) - sim_config.gen_errore_pct );
             double dimensionX = target_dimensionX_postM + ( target_dimensionX_postM * scarto_pct / 100.0 );
             double raggio     = target_raggio_postM     + ( target_raggio_postM     * scarto_pct / 100.0 );
 
@@ -749,7 +749,7 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
         printf( "\n" );
     }
 
-    log_evento( log, -1, LOG_INFO, "Avvio simulazione: %d passi", sim.n_step_simulazione );
+    log_evento( log, -1, LOG_INFO, "Avvio simulazione: %d passi", sim_config.n_step_simulazione );
 
     /* Contatori "precedenti" di anomalie/blocchi-per-guasto del sensore
      * di qualita', per registrare nel log solo il MOMENTO in cui un
@@ -762,7 +762,7 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
     long bloccoGuastoISP1_prev = 0;
     long bloccoGuastoISP2_prev = 0;
 
-    for ( step = 0; step < sim.n_step_simulazione; step++ ) {
+    for ( step = 0; step < sim_config.n_step_simulazione; step++ ) {
         controllore_step( ctrl, step );
         statistiche_campiona( stats, ctrl );
 
@@ -801,13 +801,13 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
     }
 
     if ( stampa_stato_console ) {
-        printf( "=== Stato finale (dopo %d passi) ===\n", sim.n_step_simulazione );
+        printf( "=== Stato finale (dopo %d passi) ===\n", sim_config.n_step_simulazione );
         controllore_print( ctrl );
         printf( "Completati: %ld, ancora in coda (pending): %d, arrivi non ancora entrati (schedulati): %d\n",
                 controllore_getCompletati( ctrl ), controllore_getPendingCount( ctrl ),
                 controllore_getArriviSchedulatiCount( ctrl ) );
     }
-    log_evento( log, sim.n_step_simulazione, LOG_INFO,
+    log_evento( log, sim_config.n_step_simulazione, LOG_INFO,
                 "Fine simulazione: completati=%ld, ancora in coda (pending)=%d, arrivi schedulati non entrati=%d",
                 controllore_getCompletati( ctrl ), controllore_getPendingCount( ctrl ),
                 controllore_getArriviSchedulatiCount( ctrl ) );
@@ -838,13 +838,13 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
             if ( b == NULL || buffer_getOutputCount( b ) != 0 ) { continue; }
             bufferObj_t *cur = b->head;
             while ( cur != NULL ) {
-                statistiche_registraCompletamento( stats, cur->dato, sim.scadenza_step ); /* vedi SCADENZA_STEP nel plant_config, default 40 */
+                statistiche_registraCompletamento( stats, cur->dato, sim_config.scadenza_step ); /* vedi SCADENZA_STEP nel plant_config, default 40 */
                 cur = cur->next;
             }
         }
     }
 
-    statistiche_stampa( stats, ctrl, sim.n_step_simulazione, statistiche_path, stampa_stato_console );
+    statistiche_stampa( stats, ctrl, sim_config.n_step_simulazione, statistiche_path, stampa_stato_console );
 
     if ( out_riepilogo != NULL ) {
         statistiche_getRiepilogo( stats, ctrl, out_riepilogo );
