@@ -17,8 +17,7 @@
 #include "Controllore.h"
 #include "parser.h"
 
-#define SOGLIA_BUFFER       0.8
-#define N_STEP_SIMULAZIONE  60
+/* I parametri della simulazione vengono caricati da plant_config */
 #define BUFFER_INGRESSO     "B1"
 
 int main( int argc, char *argv[] )
@@ -38,7 +37,12 @@ int main( int argc, char *argv[] )
         fprintf( stderr, "Errore creazione cella\n" );
         return 1;
     }
-
+/* 1bis. Caricamento dei parametri globali della simulazione */
+if ( !parser_caricaSimulazione( path_config, &sim_config, &err ) ) {
+    fprintf( stderr, "Errore caricamento configurazione simulazione: %d\n", err );
+    cell_destroy( cell );
+    return 1;
+}
     /* 2. Costruzione della cella dal file di configurazione impianto:
      *    crea buffer/nastri/macchine/ISP e li collega. */
     int elementi = parser_costruisciCella( cell, path_config, &err );
@@ -52,7 +56,7 @@ int main( int argc, char *argv[] )
     /* 3. Il controllore va creato DOPO aver aggiunto tutti i buffer:
      *    crea automaticamente un SensoreBuffer per ognuno di quelli
      *    già presenti in questo momento (vedi Controllore.h). */
-    ctrl = controllore_create( cell, SOGLIA_BUFFER, &err );
+    ctrl = controllore_create( cell, sim_config.soglia_buffer, &err );
     if ( ctrl == NULL ) {
         fprintf( stderr, "Errore creazione controllore: %d\n", err );
         cell_destroy( cell );
@@ -74,11 +78,33 @@ int main( int argc, char *argv[] )
     /* 5. Scenario: applica (o disattiva esplicitamente) il guasto del
      *    sensore di qualità configurato nel file di scenario. */
     ScenarioConfig scenario;
-    parser_caricaScenario( path_scenario, &scenario, &err );
-    printf( "Scenario '%s': load_multiplier=%.2f, guasto=%s su %s\n",
-            scenario.nome, scenario.moltiplicatore_carico,
-            scenario.guasto_abilitato ? "ABILITATO" : "disabilitato",
-            scenario.guasto_isp_id );
+
+/* Caricamento dello scenario */
+if ( !parser_caricaScenario( path_scenario, &scenario, &err ) ) {
+    fprintf( stderr, "Errore caricamento scenario '%s' (codice %d)\n",
+             path_scenario, err );
+    controllore_destroy( ctrl );
+    cell_destroy( cell );
+    return 1;
+}
+
+printf( "Scenario '%s': load_multiplier=%.2f, guasto=%s",
+        scenario.nome,
+        scenario.moltiplicatore_carico,
+        scenario.guasto_abilitato ? "ABILITATO" : "disabilitato" );
+
+if ( scenario.n_guasto_isp > 0 ) {
+    printf( " su " );
+
+    for ( int i = 0; i < scenario.n_guasto_isp; i++ ) {
+        if ( i > 0 ) {
+            printf( ", " );
+        }
+        printf( "%s", scenario.guasto_isp_id[i] );
+    }
+}
+
+printf( "\n" );
     err = parser_applicaScenario( cell, &scenario );
     if ( err != OP_SUCCESS ) {
         fprintf( stderr, "ATTENZIONE: applicazione scenario fallita (codice %d)\n", err );
@@ -89,18 +115,19 @@ int main( int argc, char *argv[] )
     printf( "Oggetti caricati in %s: %d\n", BUFFER_INGRESSO, oggetti_caricati );
 
     /* 7. Simulazione */
-    for ( step = 0; step < N_STEP_SIMULAZIONE; step++ ) {
-        controllore_step( ctrl, step );
+   for ( step = 0; step < sim_config.n_step_simulazione; step++ ) {
+    controllore_step( ctrl, step );
     }
 
-    printf( "=== Stato finale (dopo %d passi) ===\n", N_STEP_SIMULAZIONE );
+    printf( "=== Stato finale (dopo %d passi) ===\n", sim_config.n_step_simulazione );
     controllore_print( ctrl );
     printf( "Completati: %ld, ancora in coda (pending): %d\n",
             controllore_getCompletati( ctrl ), controllore_getPendingCount( ctrl ) );
 
-    /* NB: la pulizia degli object_t inseriti resta da fare (nessun
-     * modulo del progetto li libera automaticamente): vedi nota nel
-     * messaggio di revisione — da decidere insieme al gruppo. */
+   /* Gli object_t ancora presenti nelle code interne del controllore
+ * vengono liberati automaticamente da controllore_destroy().
+ * Gli oggetti già trasferiti ai buffer/cella vengono invece gestiti
+ * dalla distruzione delle rispettive strutture. */
 
     controllore_destroy( ctrl );
     cell_destroy( cell );
