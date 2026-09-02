@@ -108,12 +108,12 @@
  * parametri di simulazione (SIM_STEPS/SIM_PEZZI/SOGLIA_BUFFER/
  * GEN_TARGET_DIMENSIONX/GEN_TARGET_RAGGIO/GEN_ERRORE_PCT). Prima erano
  * tutti #define fissi qui nel main: ora arrivano da qui. */
-#define CONFIG_PATH_DEFAULT  "lib/parser/plant_config_layout2.txt"
+#define CONFIG_PATH_DEFAULT  "plant_config_valid.txt"
 
 /* Percorso di default del file di scenario (sez. 7 della traccia: deve
  * poter cambiare "senza ricompilare il programma" - per questo e'
  * sovrascrivibile da riga di comando, vedi argv[] in main()). */
-#define SCENARIO_PATH_DEFAULT  "lib/parser/scenario_difficile_layout2.txt"
+#define SCENARIO_PATH_DEFAULT  "scenario_nominale.txt"
 
 /* Percorso di default del file oggetti per B1 (sez. 8/10 della traccia:
  * "almeno i file di configurazione, oggetti e scenario" da riga di
@@ -122,7 +122,7 @@
  * esplicito da riga di comando, viene usato automaticamente al posto
  * del generatore casuale storico (SIM_PEZZI). Se punti i tuoi file
  * oggetti altrove, aggiorna semplicemente questa define. */
-#define OGGETTI_PATH_DEFAULT "lib/parser/oggetti_esempio.txt"
+#define OGGETTI_PATH_DEFAULT "oggetti_esempio.txt"
 
 /* Stessa logica di OGGETTI_PATH_DEFAULT sopra, ma per B2 (argv[4], vedi
  * main()) e SIM_PEZZI_B2. */
@@ -390,7 +390,7 @@ static short int esegui_simulazione( const char *config_path, const char *oggett
     short int err, logErr;
     int step;
 
-    SimulationConfig sim;
+    SimulationConfig sim_config;
     int elementi_cella, attuatori_collegati;
 
     srand( seed );
