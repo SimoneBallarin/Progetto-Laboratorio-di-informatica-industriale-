@@ -1,20 +1,17 @@
 #[[
-CMakeLists.txt - build alternativa a build.sh/.vscode/tasks.json.
+CMakeLists.txt - build alternativa a test/run_tests.sh.
 
 Uso:
     cmake -S . -B build_cmake
     cmake --build build_cmake
-    # eseguibile: build_cmake/main  (equivalente ad app/main.exe)
+    # eseguibile: build_cmake/main
 
     ctest --test-dir build_cmake --output-on-failure
     # lancia tutti i test Unity registrati sotto test/ (equivalente a test/run_tests.sh)
 
-Struttura del progetto: un modulo per cartella sotto lib/, con .h e .c
-direttamente nella cartella del modulo (nessuna sottocartella include/src).
-Alcune cartelle contengono spazi nel nome ("Nastro Trasportare", "Sensore
-Buffer", "Sensore di Prossimita", "Sensore Qualita"): CMake li gestisce
-senza problemi purche' passati come stringhe quotate, mai come glob non
-quotati.
+Struttura del progetto: tutti i moduli (.c/.h) nella cartella principale,
+nessuna sottocartella lib/ o app/ - vedi test/run_tests.sh per la stessa
+convenzione (-I. come unico include).
 #]]
 
 cmake_minimum_required(VERSION 3.16)
@@ -31,75 +28,52 @@ endif()
 add_compile_options(-Wall -Wextra)
 
 # ------------------------------------------------------------------
-# Librerie del progetto: percorsi sorgente/header, uno per modulo.
-# Elencati esplicitamente (non con file(GLOB_RECURSE ...)) per lo stesso
-# motivo per cui build.sh non usa un glob: un file .c aggiunto per errore
-# in una cartella (es. un file di test lasciato lì per sbaglio) non deve
-# finire silenziosamente nella build principale.
+# Librerie del progetto: elencate esplicitamente (non con
+# file(GLOB_RECURSE ...)) per lo stesso motivo per cui test/run_tests.sh
+# non usa un glob: un file .c aggiunto per errore non deve finire
+# silenziosamente nella build principale.
 # ------------------------------------------------------------------
 
 set(LIB_SOURCES
-    lib/Oggetto/object.c
-    lib/IDlist/idlist.c
-    lib/Registro/registry.c
-    lib/Buffer/buffer.c
-    lib/Cella/cell.c
-    "lib/Nastro Trasportare/nastro.c"
-    lib/Macchina/machine.c
-    lib/ISP/isp.c
-    lib/Attuatori/Motori/Motore.c
-    lib/Attuatori/Servo/Deviatore.c
-    "lib/Sensori/Sensore di Prossimita/S_Presenza.c"
-    "lib/Sensori/Sensore Buffer/S_Buffer.c"
-    "lib/Sensori/Sensore Qualita/S_Qualita.c"
-    lib/Controllore/Controllore.c
-    lib/parser/parser.c
-    lib/Statistiche/statistiche.c
-    lib/Log/log.c
+    object.c
+    idlist.c
+    registry.c
+    buffer.c
+    cell.c
+    nastro.c
+    machine.c
+    isp.c
+    Motore.c
+    Deviatore.c
+    S_Presenza.c
+    S_Buffer.c
+    S_Qualita.c
+    Controllore.c
+    parser.c
+    statistiche.c
+    log.c
 )
 
 set(LIB_INCLUDE_DIRS
-    lib/Errori
-    lib/Oggetto
-    lib/IDlist
-    lib/Registro
-    lib/Buffer
-    lib/Cella
-    "lib/Nastro Trasportare"
-    lib/Macchina
-    lib/ISP
-    lib/Attuatori/Motori
-    lib/Attuatori/Servo
-    "lib/Sensori/Sensore di Prossimita"
-    "lib/Sensori/Sensore Buffer"
-    "lib/Sensori/Sensore Qualita"
-    lib/Controllore
-    lib/parser
-    lib/Statistiche
-    lib/Log
+    ${CMAKE_SOURCE_DIR}
 )
 
 # Libreria statica interna: cosi' sia l'eseguibile principale sia ogni
 # eseguibile di test (sotto) linkano lo STESSO oggetto compilato una sola
-# volta, invece di ricompilare tutti i moduli per ogni test_*.c (come fa
-# invece test/run_tests.sh, per restare indipendente da CMake).
+# volta, invece di ricompilare tutti i moduli per ogni test_*.c.
 add_library(cella_lib STATIC ${LIB_SOURCES})
 target_include_directories(cella_lib PUBLIC ${LIB_INCLUDE_DIRS})
 target_link_libraries(cella_lib PUBLIC m)   # -lm: usata da statistiche/macchina (calcoli in double)
 
 # ------------------------------------------------------------------
-# Eseguibile principale (equivalente ad app/main.exe)
+# Eseguibile principale (equivalente a main.c compilato da build.sh/VSCode)
 # ------------------------------------------------------------------
 
-add_executable(main app/main.c)
+add_executable(main main.c)
 target_link_libraries(main PRIVATE cella_lib)
 
 # ------------------------------------------------------------------
 # Test Unity (equivalenti a test/run_tests.sh), registrati in CTest.
-# Ogni test/test_*.c ha gia' il proprio main() (UNITY_BEGIN/RUN_TEST/
-# UNITY_END, vedi test/test_*.c): diventa un eseguibile CTest a se'
-# stante, cosi' un test che fallisce non impedisce agli altri di girare
-# (stessa filosofia di test/run_tests.sh).
 # ------------------------------------------------------------------
 
 enable_testing()
@@ -115,12 +89,7 @@ foreach(TEST_SRC ${UNITY_TEST_SOURCES})
     target_link_libraries(${TEST_NAME} PRIVATE unity cella_lib)
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     # I test leggono file con percorsi RELATIVI (es. "test/fixtures/...",
-    # "lib/parser/scenario_difficile_layout1.txt"), assumendo di essere lanciati
-    # dalla root del progetto - stessa convenzione di test/run_tests.sh.
-    # CTest di default lancia ogni eseguibile con cwd = cartella di
-    # build, non la root: senza questa property, i test che aprono file
-    # (es. test_parser.c) fallirebbero SOLO sotto ctest, non sotto
-    # test/run_tests.sh - scoperto proprio verificando che entrambi i
-    # percorsi di build dessero lo stesso risultato.
+    # "plant_config_valid.txt"), assumendo di essere lanciati dalla root
+    # del progetto - stessa convenzione di test/run_tests.sh.
     set_tests_properties(${TEST_NAME} PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endforeach()
