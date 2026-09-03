@@ -1,0 +1,26 @@
+# Eseguibili compilati
+programma
+test_parser
+main
+main.exe
+
+# Cartelle di build
+build/
+build_cmake/
+test/build/
+
+# File oggetto e binari
+*.o
+*.exe
+*.out
+
+# File generati dalle run della simulazione (non vanno versionati:
+# cambiano ad ogni esecuzione e non fanno parte del codice sorgente)
+simulazione.log
+simulazione_strategia2.log
+statistiche.txt
+statistiche_strategia2.txt
+confronto_strategie.txt
+
+# macOS
+.DS_Store
