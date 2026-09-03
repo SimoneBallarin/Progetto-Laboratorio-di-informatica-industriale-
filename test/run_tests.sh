@@ -10,19 +10,10 @@
 # di test non impedisce agli altri di girare.
 set -u
 
-INCLUDES="-Itest/unity \
-  -Ilib/Errori -Ilib/Oggetto -Ilib/IDlist -Ilib/Registro -Ilib/Buffer \
-  -Ilib/Cella -I\"lib/Nastro Trasportare\" -Ilib/Macchina -Ilib/ISP \
-  -Ilib/Attuatori/Motori -Ilib/Attuatori/Servo \
-  -I\"lib/Sensori/Sensore di Prossimita\" -I\"lib/Sensori/Sensore Buffer\" -I\"lib/Sensori/Sensore Qualita\" \
-  -Ilib/Controllore -Ilib/parser -Ilib/Statistiche -Ilib/Log"
+INCLUDES="-I. -Itest/unity"
 
-SRCS_COMUNI="lib/Oggetto/object.c lib/IDlist/idlist.c lib/Registro/registry.c lib/Buffer/buffer.c \
-  lib/Cella/cell.c \"lib/Nastro Trasportare/nastro.c\" lib/Macchina/machine.c lib/ISP/isp.c \
-  lib/Attuatori/Motori/Motore.c lib/Attuatori/Servo/Deviatore.c \
-  \"lib/Sensori/Sensore di Prossimita/S_Presenza.c\" \"lib/Sensori/Sensore Buffer/S_Buffer.c\" \"lib/Sensori/Sensore Qualita/S_Qualita.c\" \
-  lib/Controllore/Controllore.c lib/Statistiche/statistiche.c lib/Log/log.c lib/parser/parser.c"
-
+SRCS_COMUNI="Controllore.c Deviatore.c Motore.c S_Buffer.c S_Presenza.c S_Qualita.c \
+  buffer.c cell.c idlist.c isp.c log.c machine.c nastro.c object.c parser.c registry.c statistiche.c"
 mkdir -p test/build
 
 FALLITI=0
