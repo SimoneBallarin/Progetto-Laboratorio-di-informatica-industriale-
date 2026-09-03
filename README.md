@@ -131,3 +131,81 @@ ctest --test-dir build_cmake --output-on-failure
 `test_controllore_strategia.c`, `test_isp_guasto.c`, `test_sensore_qualita.c`,
 `test_isp_routing_materiale.c`, `test_arrivi_schedulati.c`, `test_parser.c`,
 `test_machine.c`, `test_tolleranza_qualita.c`, `test_smistamento_generalizzato.c`).
+
+## Formato dei file di ingresso
+
+### File di configurazione impianto (es. `plant_config_valid.txt`)
+
+Formato chiave=valore separato da virgole, una riga per elemento:
+
+```
+BUFFER,ID=B1,CAPACITY=60
+INGRESSO,ID=B1
+ISP,ID=ISP1,TEMPO=1,DIMX_TARGET=100,RAGGIO_TARGET=10
+NASTRO,ID=N1,CAPACITY=2,VELOCITA=2
+MACCHINA,ID=M,TEMPO=3
+CONNECT,FROM=B1,TO=ISP1
+MOTORE,NASTRO=N1,VELOCITA=5000,ACCEL=2000
+DEVIATORE,ISP=ISP2,TEMPO_MIN_COMMUT=3
+```
+
+Più i parametri globali di simulazione in coda al file: `SIM_STEPS`, `SIM_PEZZI`
+(usato solo se non passi un file oggetti da riga di comando), `SIM_PEZZI_B2`
+(pre-caricamento di B2), `SOGLIA_BUFFER`, `GEN_TARGET_DIMENSIONX`, `GEN_TARGET_RAGGIO`.
+
+### File di scenario (es. `scenario_nominale.txt`)
+
+```
+SCENARIO_NAME=nominale
+LOAD_MULTIPLIER=1.0
+FAULT_ENABLED=0
+FAULT_ISP=ISP2
+FAULT_TIME_ERROR=20
+```
+
+`FAULT_ISP` accetta anche più ISP separate da virgola senza spazi (es.
+`FAULT_ISP=ISP1,ISP2`, vedi `scenario_doppio_guasto.txt`), fino a un massimo di 4
+(vedi "Limitazioni note" sotto).
+
+### File oggetti in ingresso (es. `oggetti_esempio.txt`)
+
+Formato CSV con header:
+
+```
+ID,PRIORITY,TYPE,ARRIVAL_STEP,DIMENSIONX,RAGGIO
+P001,8,A,0,100.0,10.0
+P003,5,A,3,98.5,9.8
+```
+
+Ogni pezzo entra nella cella esattamente al proprio `ARRIVAL_STEP`, non tutto insieme
+a step 0 come nel generatore casuale (`SIM_PEZZI`). Stesso formato per il file di
+pre-caricamento di B2 (quarto argomento da riga di comando).
+
+## Limitazioni note
+
+Vincoli tecnici/numerici del programma (non scelte di design, solo cosa il codice
+accetta o rifiuta concretamente):
+
+- **Lunghezza di un identificativo (ID)**: 19 caratteri utili + terminatore
+  (`IDLENGTH=20` in `object.h`), usata per ogni entità — buffer, ISP, macchina, nastro,
+  motore, deviatore, sensore, oggetto. Un ID più lungo viene troncato in fase di lettura.
+- **Priorità di un oggetto**: intera, da `PRIORITY_MIN=0` a `PRIORITY_MAX=10`
+  (`object.h`). Un valore fuori range viene rifiutato da `object_create`.
+- **ISP guaste contemporaneamente in un singolo scenario**: al massimo 4
+  (`MAX_GUASTO_ISP` in `parser.h`). Oltre la quarta, le entrate in più vengono
+  scartate con un avviso su stderr, senza bloccare le altre.
+- **Lunghezza di una riga nei file di configurazione/scenario/oggetti**: 255 caratteri
+  (`MAX_LINE_LEN=256` in `parser.c`). Una riga più lunga viene troncata da `fgets`.
+- **Numero di buffer, ISP, macchine, nastri, oggetti**: nessun limite fisso — sono
+  tutte liste concatenate allocate dinamicamente (`cell.c`, `registry.c`), limitate solo
+  dalla memoria disponibile.
+
+## Note per chi contribuisce al progetto
+
+- I file compilati (`programma`, eseguibili di test) e i file generati da ogni run
+  (`simulazione.log`, `statistiche.txt`, `confronto_strategie.txt`) **non vanno
+  committati**: sono già esclusi da `.gitignore`. Se `git status` te li segnala come
+  "untracked" o "modified" dopo una compilazione/esecuzione locale, è normale — non
+  vanno aggiunti.
+- Per compilare e testare rapidamente le modifiche prima di ogni commit:
+  `./test/run_tests.sh` (oppure `cmake --build build_cmake && ctest --test-dir build_cmake`).
