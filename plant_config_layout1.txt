@@ -1,0 +1,75 @@
+BUFFER,ID=B1,CAPACITY=60
+INGRESSO,ID=B1
+# TOLLERANZA_CONFORME/TOLLERANZA_RIVALUTAZIONE (facoltativi, percentuale
+# di scostamento da DIMX_TARGET/RAGGIO_TARGET): sotto la prima soglia il
+# pezzo e' CONFORME, sotto la seconda e' RIVALUTAZIONE, oltre e' SCARTO
+# (vedi S_Qualita.c/get_qualita). Se assenti, default 5/10 (comportamento
+# storico). Vanno indicate ENTRAMBE o nessuna delle due, e RIVALUTAZIONE
+# deve restare >= CONFORME.
+#
+# SMISTAMENTO (facoltativo, vedi tipo_smistamento_t in Controllore.h e
+# README sez. "Smistamento generalizzato delle ISP"): qui dichiarato
+# esplicitamente per chiarezza, anche se coincide con quello che AUTO
+# dedurrebbe comunque da sola dal numero di uscite collegate (1 uscita,
+# vedi CONNECT sotto). ISP1 e' un'ISP "passacarte": calcola comunque
+# l'esito qualita' e il materiale per le statistiche, ma non li usa per
+# instradare (un'unica uscita verso N1).
+ISP,ID=ISP1,TEMPO=1,DIMX_TARGET=100,RAGGIO_TARGET=10,TOLLERANZA_CONFORME=5,TOLLERANZA_RIVALUTAZIONE=10,SMISTAMENTO=PASSACARTE
+NASTRO,ID=N1,CAPACITY=2,VELOCITA=2
+# TOLLERANZA (facoltativa, frazione, es. 0.02 = 2%): rumore casuale
+# massimo applicato a dimensionX/raggio al rilascio di un pezzo lavorato
+# (vedi machine_tryRelease). Se assente, default 0.02 (comportamento
+# storico, vedi TOLLERANZA_LAVORAZIONE_DEFAULT in machine.c).
+MACCHINA,ID=M,TEMPO=3,TOLLERANZA=0.02
+BUFFER,ID=B2,CAPACITY=60
+# SMISTAMENTO=ENTRAMBI (dichiarato esplicitamente, come per ISP1 sopra):
+# con le 4 uscite collegate sotto (CONNECT), AUTO dedurrebbe comunque lo
+# stesso criterio da sola - ISP2 instrada SIA per materiale SIA per
+# qualita' insieme (layout 1, vedi README). Per il layout 2, dove lo
+# smistamento per materiale e per qualita' avviene su ISP SEPARATE, vedi
+# plant_config_layout2.txt (SMISTAMENTO=MATERIALE/QUALITA).
+ISP,ID=ISP2,TEMPO=2,DIMX_TARGET=80,RAGGIO_TARGET=6,TOLLERANZA_CONFORME=5,TOLLERANZA_RIVALUTAZIONE=10,SMISTAMENTO=ENTRAMBI
+BUFFER,ID=B_Alacciaio,CAPACITY=60
+BUFFER,ID=B_riqualifica,CAPACITY=60
+BUFFER,ID=B_TRASH,CAPACITY=60
+BUFFER,ID=B_rame,CAPACITY=60
+
+CONNECT,FROM=B1,TO=ISP1
+CONNECT,FROM=ISP1,TO=N1
+CONNECT,FROM=N1,TO=M
+CONNECT,FROM=M,TO=B2
+CONNECT,FROM=B2,TO=ISP2
+CONNECT,FROM=ISP2,TO=B_Alacciaio
+CONNECT,FROM=ISP2,TO=B_riqualifica
+CONNECT,FROM=ISP2,TO=B_TRASH
+CONNECT,FROM=ISP2,TO=B_rame
+
+MOTORE,NASTRO=N1,VELOCITA=5000,ACCEL=2000
+MOTORE,NASTRO=M,VELOCITA=5000,ACCEL=2000
+DEVIATORE,ISP=ISP2,TEMPO_MIN_COMMUT=3
+
+SIM_STEPS=100
+# SIM_PEZZI: usato SOLO se non passi un file oggetti da riga di comando
+# (vedi README, sezione "File oggetti in ingresso"). Se lanci il
+# programma con un file oggetti esplicito, questo valore viene ignorato:
+# il numero e le proprieta' dei pezzi vengono da quel file, non da qui.
+SIM_PEZZI=35
+# SIM_PEZZI_B2: pezzi pre-caricati DIRETTAMENTE in B2 all'avvio, in
+# aggiunta a quelli di B1 (default 0 = nessuno, comportamento storico).
+# Utile per far partire la simulazione con B2 gia' parzialmente pieno,
+# es. per osservare da subito il comportamento della Strategia 1
+# (buffer-aware) sulla soglia a valle di M. Applicato SEMPRE, sia con
+# generatore casuale sia con file oggetti per B1 (i due meccanismi sono
+# indipendenti).
+SIM_PEZZI_B2=0
+SOGLIA_BUFFER=0.8
+GEN_TARGET_DIMENSIONX=100
+GEN_TARGET_RAGGIO=10
+GEN_ERRORE_PCT=2
+# SCADENZA_STEP (facoltativo, passi di simulazione): entro quanti passi
+# dall'arrivo un pezzo e' considerato "in tempo" per le statistiche
+# "entro scadenza" (vedi statistiche_registraCompletamento in
+# app/main.c). Se assente, default 40 (comportamento storico). Un
+# valore <= 0 disattiva del tutto il controllo scadenza (vedi
+# statistiche.c: ogni pezzo risulta "in tempo" per definizione).
+SCADENZA_STEP=40
