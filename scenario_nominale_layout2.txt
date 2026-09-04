@@ -1,0 +1,11 @@
+SCENARIO_NAME=nominale_layout2
+LOAD_MULTIPLIER=1.0
+# Guasto dichiarato ma disattivato (FAULT_ENABLED=0), come lo scenario
+# nominale del layout 1: FAULT_ISP punta a ISP_B2 (una delle due ISP
+# finali di linea, vedi plant_config_layout2.txt), l'analogo di ISP2 nel
+# layout 1 - la stazione dove il guasto avrebbe l'effetto piu' visibile
+# (instradamento finale), anche se qui non scatta.
+FAULT_ENABLED=0
+FAULT_ISP=ISP_B2
+FAULT_TIME_ERROR=20
+FAULT_TIME_OK=5
