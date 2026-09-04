@@ -150,17 +150,48 @@ tutti i campi opzionali usati, vedi le sezioni "Layout 1"/"Layout 2" più sotto)
 ```
 BUFFER,ID=B1,CAPACITY=60
 INGRESSO,ID=B1
-ISP,ID=ISP1,TEMPO=1,DIMX_TARGET=100,RAGGIO_TARGET=10
+ISP,ID=ISP1,TEMPO=1,DIMX_TARGET=100,RAGGIO_TARGET=10,TOLLERANZA_CONFORME=5,TOLLERANZA_RIVALUTAZIONE=10,SMISTAMENTO=PASSACARTE
 NASTRO,ID=N1,CAPACITY=2,VELOCITA=2
-MACCHINA,ID=M,TEMPO=3
+MACCHINA,ID=M,TEMPO=3,TOLLERANZA=0.02
+BUFFER,ID=B2,CAPACITY=60
+ISP,ID=ISP2,TEMPO=2,DIMX_TARGET=80,RAGGIO_TARGET=6,TOLLERANZA_CONFORME=5,TOLLERANZA_RIVALUTAZIONE=10,SMISTAMENTO=ENTRAMBI
 CONNECT,FROM=B1,TO=ISP1
+CONNECT,FROM=ISP1,TO=N1
+CONNECT,FROM=N1,TO=M
+CONNECT,FROM=M,TO=B2
+CONNECT,FROM=B2,TO=ISP2
 MOTORE,NASTRO=N1,VELOCITA=5000,ACCEL=2000
-DEVIATORE,ISP=ISP2,TEMPO_MIN_COMMUT=3
+MOTORE,NASTRO=M,VELOCITA=5000,ACCEL=2000
 ```
+
+Campi facoltativi mostrati sopra (se assenti, si ricade sui default):
+
+- `TOLLERANZA_CONFORME`/`TOLLERANZA_RIVALUTAZIONE` (su `ISP`, percentuale di
+  scostamento da `DIMX_TARGET`/`RAGGIO_TARGET`): sotto la prima soglia il pezzo è
+  CONFORME, sotto la seconda RIVALUTAZIONE, oltre SCARTO. Default `5`/`10` se assenti;
+  vanno indicate entrambe o nessuna delle due.
+- `SMISTAMENTO` (su `ISP`, vedi sezione "Smistamento generalizzato delle ISP" più
+  sotto): se assente, dedotto automaticamente (`AUTO`) dal numero di uscite collegate
+  nei `CONNECT`. `ISP1` sopra usa `PASSACARTE` (un'unica uscita, verso `N1`), `ISP2`
+  usa `ENTRAMBI` — nel file reale ha altre 4 uscite collegate (verso i buffer finali,
+  omesse qui per brevità: vedi "Layout 1" più sotto per l'elenco completo) e i target
+  `DIMX_TARGET`/`RAGGIO_TARGET` più bassi perché post-lavorazione, non grezzi come su
+  ISP1.
+- `TOLLERANZA` (su `MACCHINA`, frazione, es. `0.02` = 2%): rumore casuale massimo
+  applicato a dimensione/raggio al rilascio del pezzo lavorato. Default `0.02` se
+  assente.
+
+`DEVIATORE,ISP=<id>,TEMPO_MIN_COMMUT=<n>` è un'altra riga valida (obbligatoria per
+ogni ISP con più di un'uscita collegata — qui servirebbe per `ISP2`, che nel file
+reale ha altre 4 uscite verso i buffer finali, omesse sopra per brevità): per
+l'esempio completo vedi le sezioni "Layout 1"/"Layout 2" più sotto (es.
+`DEVIATORE,ISP=ISP2,TEMPO_MIN_COMMUT=3` nel layout 1).
 
 Più i parametri globali di simulazione in coda al file: `SIM_STEPS`, `SIM_PEZZI`
 (usato solo se non passi un file oggetti da riga di comando), `SIM_PEZZI_B2`
-(pre-caricamento di B2), `SOGLIA_BUFFER`, `GEN_TARGET_DIMENSIONX`, `GEN_TARGET_RAGGIO`.
+(pre-caricamento di B2), `SOGLIA_BUFFER`, `GEN_TARGET_DIMENSIONX`, `GEN_TARGET_RAGGIO`,
+`GEN_ERRORE_PCT` (rumore % applicato dal generatore casuale ai pezzi), `SCADENZA_STEP`
+(facoltativo, default 40 — vedi "Limitazioni note" per gli altri default).
 
 ### File di scenario (es. `scenario_nominale_layout1.txt`)
 
@@ -214,6 +245,8 @@ usa `MATERIALE` su ISP0 e `QUALITA` su ciascuna delle due ISP di linea.
 
 Voci del parser presenti in `plant_config_layout1.txt`:
 
+- **1 `INGRESSO`** (`ID=B1`): dichiara `B1` come punto di ingresso della cella, l'unico
+  a cui è agganciato il sensore di presenza (`S_Presenza`).
 - **1 ISP prima della lavorazione** (`ISP1`, `TEMPO=1`, `DIMX_TARGET=100,
   RAGGIO_TARGET=10` — target grezzo, `TOLLERANZA_CONFORME=5, TOLLERANZA_RIVALUTAZIONE=10`
   espliciti, `SMISTAMENTO=PASSACARTE`): calcola comunque l'esito qualità/materiale per le
@@ -264,14 +297,16 @@ condivisi tra le due linee (più `CONNECT` verso lo stesso buffer).
 Voci del parser presenti in `plant_config_layout2.txt` (per differenza rispetto al
 layout 1):
 
-- **1 ISP prima della lavorazione** (`ISP0`, `SMISTAMENTO=MATERIALE`, `DIMX_TARGET=100,
-  RAGGIO_TARGET=10`): giudica il pezzo grezzo così com'è arrivato in B1, non dopo
-  un'asportazione di materiale che non è ancora avvenuta.
+- **1 `INGRESSO`** (`ID=B1`): stesso ruolo del layout 1 (unico punto agganciato al
+  sensore di presenza).
+- **1 ISP prima della lavorazione** (`ISP0`, `TEMPO=1`, `SMISTAMENTO=MATERIALE`,
+  `DIMX_TARGET=100, RAGGIO_TARGET=10`): giudica il pezzo grezzo così com'è arrivato in
+  B1, non dopo un'asportazione di materiale che non è ancora avvenuta.
 - **2 MACCHINA** (`M1`, `M2`, entrambe `TEMPO=3,TOLLERANZA=0.02`), una per linea, invece
   dell'unica `M` del layout 1.
-- **2 ISP dopo la lavorazione** (`ISP_B2`, `ISP_B3`, entrambe `SMISTAMENTO=QUALITA`,
-  `DIMX_TARGET=80, RAGGIO_TARGET=6` — target post-lavorazione, non quello grezzo di
-  ISP0), una per linea.
+- **2 ISP dopo la lavorazione** (`ISP_B2`, `ISP_B3`, entrambe `TEMPO=2,
+  SMISTAMENTO=QUALITA`, `DIMX_TARGET=80, RAGGIO_TARGET=6` — target post-lavorazione, non
+  quello grezzo di ISP0), una per linea.
 - **Nessun `NASTRO`**: a differenza del layout 1 (che ha `N1` tra ISP1 e M), qui ISP0 è
   collegata direttamente a M1/M2 via `CONNECT`, senza un nastro trasportatore dedicato.
   Di conseguenza i `MOTORE` (`MOTORE,NASTRO=M1,...` / `MOTORE,NASTRO=M2,...`) sono
@@ -281,6 +316,13 @@ layout 1):
 - **`TOLLERANZA_CONFORME`/`TOLLERANZA_RIVALUTAZIONE` non impostate** su nessuna delle tre
   ISP (a differenza di ISP1/ISP2 nel layout 1, che le impostano esplicitamente a 5/10):
   qui si ricade sempre sul default 5/10 di `S_Qualita.c`.
+- **7 `BUFFER`** totali: `B1` (ingresso), `B2`/`B3` (intermedi dopo M1/M2), più le 4
+  uscite finali `B_Alacciaio`, `B_riqualifica`, `B_TRASH`, `B_rame` (tutti
+  `CAPACITY=60`) — uno in più del layout 1, perché ogni linea ha il proprio buffer
+  intermedio (`B2`/`B3`) invece dell'unico `B2` condiviso.
+- **13 `CONNECT`**: `B1→ISP0→{M1,M2}`, poi `M1→B2→ISP_B2→` le sue 3 uscite e
+  `M2→B3→ISP_B3→` le sue 3 uscite (`B_riqualifica`/`B_TRASH` compaiono due volte, una
+  per linea) — contro i 9 del layout 1.
 - Parametri globali di simulazione (`SIM_STEPS`, `SIM_PEZZI`, `SIM_PEZZI_B2`,
   `SOGLIA_BUFFER`, `GEN_TARGET_DIMENSIONX`, `GEN_TARGET_RAGGIO`, `GEN_ERRORE_PCT`,
   `SCADENZA_STEP`): stessi nomi e stesso significato del layout 1, non ripetuti qui.
