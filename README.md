@@ -53,7 +53,8 @@ scenario_nominale_layout2.txt   scenario nominale — layout 2
 scenario_difficile.txt          scenario con carico maggiore + guasto sensore qualità
 scenario_difficile_layout1.txt  scenario difficile — layout 1
 scenario_difficile_layout2.txt  scenario difficile — layout 2
-scenario_doppio_guasto.txt  scenario con guasto simultaneo su ISP1 e ISP2
+scenario_doppio_guasto.txt          scenario con guasto simultaneo su ISP1 e ISP2
+scenario_doppio_guasto_layout1.txt  scenario doppio guasto — layout 1
 oggetti_esempio.txt       file oggetti di esempio per il backlog di B1
 oggetti_b2_esempio.txt    file oggetti di esempio per il pre-caricamento di B2
 ```
