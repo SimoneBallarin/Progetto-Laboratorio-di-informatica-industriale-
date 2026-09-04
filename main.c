@@ -108,12 +108,12 @@
  * parametri di simulazione (SIM_STEPS/SIM_PEZZI/SOGLIA_BUFFER/
  * GEN_TARGET_DIMENSIONX/GEN_TARGET_RAGGIO/GEN_ERRORE_PCT). Prima erano
  * tutti #define fissi qui nel main: ora arrivano da qui. */
-#define CONFIG_PATH_DEFAULT  "plant_config_valid.txt"
+#define CONFIG_PATH_DEFAULT  "plant_config_layout1.txt"
 
 /* Percorso di default del file di scenario (sez. 7 della traccia: deve
  * poter cambiare "senza ricompilare il programma" - per questo e'
  * sovrascrivibile da riga di comando, vedi argv[] in main()). */
-#define SCENARIO_PATH_DEFAULT  "scenario_nominale.txt"
+#define SCENARIO_PATH_DEFAULT  "scenario_nominale_layout1.txt"
 
 /* Percorso di default del file oggetti per B1 (sez. 8/10 della traccia:
  * "almeno i file di configurazione, oggetti e scenario" da riga di
