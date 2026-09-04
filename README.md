@@ -47,7 +47,9 @@ CMakeLists.txt            build alternativa via CMake (vedi sotto)
 plant_config_valid.txt          file di configurazione impianto di default
 plant_config_layout1.txt        configurazione impianto — layout 1 (vedi PDF, sez. 1.1)
 plant_config_layout2.txt        configurazione impianto — layout 2 (vedi PDF, sez. 1.1)
-scenario_nominale.txt     scenario di default (nessun guasto)
+scenario_nominale.txt           scenario di default (nessun guasto)
+scenario_nominale_layout1.txt   scenario nominale — layout 1
+scenario_nominale_layout2.txt   scenario nominale — layout 2
 scenario_difficile.txt    scenario con carico maggiore + guasto sensore qualità
 scenario_doppio_guasto.txt  scenario con guasto simultaneo su ISP1 e ISP2
 oggetti_esempio.txt       file oggetti di esempio per il backlog di B1
