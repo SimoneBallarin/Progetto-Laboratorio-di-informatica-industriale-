@@ -1,0 +1,13 @@
+SCENARIO_NAME=difficile_layout2
+LOAD_MULTIPLIER=1.0
+# Guasto attivo sul sensore di qualita' di ISP_B2 (la ISP finale della
+# linea materiale 'A', vedi plant_config_layout2.txt): stessa idea dello
+# scenario difficile del layout 1 (un solo guasto, su una sola ISP), qui
+# applicata a una delle due linee parallele invece che all'unica ISP
+# finale del layout 1. La linea materiale 'B' (ISP_B3) resta sana, utile
+# per confrontare l'effetto del guasto su una linea con l'altra senza
+# guasto nella stessa run.
+FAULT_ENABLED=1
+FAULT_ISP=ISP_B2
+FAULT_TIME_ERROR=20
+FAULT_TIME_OK=5

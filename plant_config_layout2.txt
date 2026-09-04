@@ -1,0 +1,97 @@
+# plant_config_layout2.txt
+#
+# Layout 2 (vedi "progetto preliminare gruppo I MEJO.pdf", sez. 1.1):
+# a differenza del layout 1 (plant_config_layout1.txt), lo smistamento per
+# MATERIALE avviene SUBITO dopo l'ingresso, PRIMA della lavorazione: da
+# li' in poi ogni materiale segue una linea dedicata, con una propria
+# macchina M e una propria ISP finale che controlla SOLO la qualita'
+# (il materiale e' gia' implicito nella linea).
+#
+#   B1 -> ISP0 (SMISTAMENTO=MATERIALE) -+-> M1 -> B2 -> ISP_B2 (SMISTAMENTO=QUALITA) -+-> B_Alacciaio (conforme)
+#                                        |                                            +-> B_riqualifica (rivalutazione, condiviso)
+#                                        |                                            +-> B_TRASH (scarto, condiviso)
+#                                        |
+#                                        +-> M2 -> B3 -> ISP_B3 (SMISTAMENTO=QUALITA) -+-> B_rame (conforme)
+#                                                                                       +-> B_riqualifica (rivalutazione, condiviso)
+#                                                                                       +-> B_TRASH (scarto, condiviso)
+#
+# Nota di design: il documento preliminare disegnava una quarta ISP
+# "condivisa" tra le due linee per decidere rivalutazione/scarto - qui
+# NON e' stata riprodotta: ogni ISP di linea (ISP_B2/ISP_B3) instrada
+# direttamente su tutte e 3 le uscite (SMISTAMENTO=QUALITA), senza
+# passare da una seconda ISP. I BUFFER di destinazione (B_riqualifica,
+# B_TRASH) restano invece condivisi tra le due linee (piu' CONNECT verso
+# lo stesso buffer, vedi sotto) - stessa semplificazione gia' fatta per
+# il layout 1 rispetto al proprio disegno preliminare (che a sua volta
+# prevedeva due ISP in cascata dopo B2, ridotte a una sola ISP2 a 4
+# uscite nell'implementazione finale).
+#
+# Vedi anche README.md, sezione "Layout 2: smistamento per materiale
+# prima della lavorazione".
+
+BUFFER,ID=B1,CAPACITY=60
+INGRESSO,ID=B1
+
+# ISP0: unica ISP PRIMA della lavorazione. DIMX_TARGET/RAGGIO_TARGET
+# sono quelli GREZZI di ingresso (uguali a GEN_TARGET_DIMENSIONX/RAGGIO
+# sotto), non quelli post-macchina: get_Material qui giudica il pezzo
+# COSI' COM'E' arrivato in B1, non dopo un'asportazione di materiale che
+# non e' ancora avvenuta. SMISTAMENTO=MATERIALE: instrada SOLO in base
+# al materiale riconosciuto (indice 0='A'->M1, 1='B'->M2), ignora del
+# tutto l'esito qualita' (che viene comunque calcolato e contato nelle
+# statistiche, vedi Controllore.c/processISP).
+ISP,ID=ISP0,TEMPO=1,DIMX_TARGET=100,RAGGIO_TARGET=10,SMISTAMENTO=MATERIALE
+
+MACCHINA,ID=M1,TEMPO=3,TOLLERANZA=0.02
+MACCHINA,ID=M2,TEMPO=3,TOLLERANZA=0.02
+
+BUFFER,ID=B2,CAPACITY=60
+BUFFER,ID=B3,CAPACITY=60
+
+# ISP_B2/ISP_B3: una per linea, DOPO la rispettiva macchina.
+# DIMX_TARGET/RAGGIO_TARGET sono quelli POST-lavorazione (target grezzo
+# meno la riduzione fissa di M, vedi MACHINE_DLAVORATO/MACHINE_RLAVORATO
+# in machine.h - stessi valori usati da ISP2 nel layout 1).
+# SMISTAMENTO=QUALITA: instrada SOLO in base a CONFORME/RIVALUTAZIONE/
+# SCARTO (indici 0/1/2), ignora il materiale - non serve ridistinguerlo,
+# e' gia' implicito nella linea (ISP_B2 vede solo pezzi 'A', ISP_B3 solo
+# pezzi 'B', per costruzione della topologia sopra).
+ISP,ID=ISP_B2,TEMPO=2,DIMX_TARGET=80,RAGGIO_TARGET=6,SMISTAMENTO=QUALITA
+ISP,ID=ISP_B3,TEMPO=2,DIMX_TARGET=80,RAGGIO_TARGET=6,SMISTAMENTO=QUALITA
+
+BUFFER,ID=B_Alacciaio,CAPACITY=60
+BUFFER,ID=B_riqualifica,CAPACITY=60
+BUFFER,ID=B_TRASH,CAPACITY=60
+BUFFER,ID=B_rame,CAPACITY=60
+
+CONNECT,FROM=B1,TO=ISP0
+CONNECT,FROM=ISP0,TO=M1
+CONNECT,FROM=ISP0,TO=M2
+
+CONNECT,FROM=M1,TO=B2
+CONNECT,FROM=B2,TO=ISP_B2
+CONNECT,FROM=ISP_B2,TO=B_Alacciaio
+CONNECT,FROM=ISP_B2,TO=B_riqualifica
+CONNECT,FROM=ISP_B2,TO=B_TRASH
+
+CONNECT,FROM=M2,TO=B3
+CONNECT,FROM=B3,TO=ISP_B3
+CONNECT,FROM=ISP_B3,TO=B_rame
+CONNECT,FROM=ISP_B3,TO=B_riqualifica
+CONNECT,FROM=ISP_B3,TO=B_TRASH
+
+MOTORE,NASTRO=M1,VELOCITA=5000,ACCEL=2000
+MOTORE,NASTRO=M2,VELOCITA=5000,ACCEL=2000
+DEVIATORE,ISP=ISP0,TEMPO_MIN_COMMUT=3
+DEVIATORE,ISP=ISP_B2,TEMPO_MIN_COMMUT=3
+DEVIATORE,ISP=ISP_B3,TEMPO_MIN_COMMUT=3
+
+SIM_STEPS=100
+SIM_PEZZI=35
+SIM_PEZZI_B2=0
+SOGLIA_BUFFER=0.8
+GEN_TARGET_DIMENSIONX=100
+GEN_TARGET_RAGGIO=10
+GEN_ERRORE_PCT=2
+# Vedi commento in plant_config_layout1.txt: facoltativo, default 40.
+SCADENZA_STEP=40
