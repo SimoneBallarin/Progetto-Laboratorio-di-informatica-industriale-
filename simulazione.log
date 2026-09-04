@@ -1,0 +1,64 @@
+=== LOG EVENTI SIMULAZIONE ===
+[         ] [INFO   ] Configurazione impianto 'lib/parser/plant_config_layout1.txt': 19 elementi creati
+[         ] [INFO   ] Strategia di controllo: Strategia 1 (priorita' + buffer-aware)
+[         ] [INFO   ] Sensori/attuatori collegati: buffer=6 presenza=1 qualita'=2 attuatori=3
+[         ] [INFO   ] Scenario 'lib/parser/scenario_nominale_layout1.txt' (nominale) applicato: guasto disabilitato su 'ISP2' (err=1)
+[         ] [INFO   ] File oggetti 'lib/parser/oggetti_esempio.txt': 25 oggetti schedulati
+[         ] [INFO   ] SIM_PEZZI=35 ignorato: in uso il file oggetti 'lib/parser/oggetti_esempio.txt'
+[step     0] [INFO   ] Arrivo schedulato: P001 ammesso in B1 (arrival_step=0)
+[step     0] [INFO   ] Arrivo schedulato: P002 ammesso in B1 (arrival_step=0)
+[         ] [INFO   ] Avvio simulazione: 100 passi
+[step     3] [INFO   ] Arrivo schedulato: P003 ammesso in B1 (arrival_step=3)
+[step     5] [INFO   ] Arrivo schedulato: P004 ammesso in B1 (arrival_step=5)
+[step     8] [INFO   ] Arrivo schedulato: P005 ammesso in B1 (arrival_step=8)
+[step     8] [INFO   ] Completamento P001 in B_Alacciaio: attesa=0, attraversamento=8 (totale=8 passi)
+[step    10] [INFO   ] Arrivo schedulato: P006 ammesso in B1 (arrival_step=10)
+[step    12] [INFO   ] Arrivo schedulato: P007 ammesso in B1 (arrival_step=12)
+[step    13] [INFO   ] Completamento P002 in B_rame: attesa=1, attraversamento=12 (totale=13 passi)
+[step    15] [INFO   ] Arrivo schedulato: P008 ammesso in B1 (arrival_step=15)
+[step    16] [INFO   ] Completamento P003 in B_Alacciaio: attesa=0, attraversamento=13 (totale=13 passi)
+[step    18] [INFO   ] Arrivo schedulato: P009 ammesso in B1 (arrival_step=18)
+[step    19] [INFO   ] Completamento P004 in B_rame: attesa=0, attraversamento=14 (totale=14 passi)
+[step    20] [INFO   ] Arrivo schedulato: P010 ammesso in B1 (arrival_step=20)
+[step    21] [INFO   ] Completamento P005 in B_riqualifica: attesa=0, attraversamento=13 (totale=13 passi)
+[step    24] [INFO   ] Completamento P006 in B_rame: attesa=0, attraversamento=14 (totale=14 passi)
+[step    25] [INFO   ] Arrivo schedulato: P011 ammesso in B1 (arrival_step=25)
+[step    28] [INFO   ] Completamento P007 in B_Alacciaio: attesa=1, attraversamento=15 (totale=16 passi)
+[step    28] [INFO   ] Arrivo schedulato: P012 ammesso in B1 (arrival_step=28)
+[step    30] [INFO   ] Arrivo schedulato: P013 ammesso in B1 (arrival_step=30)
+[step    31] [INFO   ] Completamento P008 in B_rame: attesa=1, attraversamento=15 (totale=16 passi)
+[step    33] [INFO   ] Completamento P009 in B_riqualifica: attesa=1, attraversamento=14 (totale=15 passi)
+[step    35] [INFO   ] Arrivo schedulato: P014 ammesso in B1 (arrival_step=35)
+[step    36] [INFO   ] Completamento P010 in B_rame: attesa=2, attraversamento=14 (totale=16 passi)
+[step    38] [INFO   ] Completamento P011 in B_TRASH: attesa=0, attraversamento=13 (totale=13 passi)
+[step    40] [INFO   ] Arrivo schedulato: P015 ammesso in B1 (arrival_step=40)
+[step    41] [INFO   ] Completamento P012 in B_rame: attesa=0, attraversamento=13 (totale=13 passi)
+[step    42] [INFO   ] Arrivo schedulato: P016 ammesso in B1 (arrival_step=42)
+[step    45] [INFO   ] Arrivo schedulato: P017 ammesso in B1 (arrival_step=45)
+[step    46] [INFO   ] Completamento P013 in B_Alacciaio: attesa=1, attraversamento=15 (totale=16 passi)
+[step    48] [INFO   ] Completamento P014 in B_TRASH: attesa=0, attraversamento=13 (totale=13 passi)
+[step    50] [INFO   ] Arrivo schedulato: P018 ammesso in B1 (arrival_step=50)
+[step    51] [INFO   ] Completamento P015 in B_Alacciaio: attesa=0, attraversamento=11 (totale=11 passi)
+[step    55] [INFO   ] Completamento P016 in B_rame: attesa=0, attraversamento=13 (totale=13 passi)
+[step    55] [INFO   ] Arrivo schedulato: P019 ammesso in B1 (arrival_step=55)
+[step    58] [INFO   ] Completamento P017 in B_Alacciaio: attesa=0, attraversamento=13 (totale=13 passi)
+[step    59] [INFO   ] Completamento P018 in B_riqualifica: attesa=0, attraversamento=9 (totale=9 passi)
+[step    60] [INFO   ] Arrivo schedulato: P020 ammesso in B1 (arrival_step=60)
+[step    63] [INFO   ] Completamento P019 in B_Alacciaio: attesa=0, attraversamento=8 (totale=8 passi)
+[step    65] [INFO   ] Arrivo schedulato: P021 ammesso in B1 (arrival_step=65)
+[step    70] [INFO   ] Completamento P020 in B_rame: attesa=0, attraversamento=10 (totale=10 passi)
+[step    70] [INFO   ] Arrivo schedulato: P022 ammesso in B1 (arrival_step=70)
+[step    75] [INFO   ] Completamento P021 in B_Alacciaio: attesa=0, attraversamento=10 (totale=10 passi)
+[step    75] [INFO   ] Arrivo schedulato: P023 ammesso in B1 (arrival_step=75)
+[step    80] [INFO   ] Completamento P022 in B_rame: attesa=0, attraversamento=10 (totale=10 passi)
+[step    80] [INFO   ] Arrivo schedulato: P024 ammesso in B1 (arrival_step=80)
+[step    85] [INFO   ] Completamento P023 in B_Alacciaio: attesa=0, attraversamento=10 (totale=10 passi)
+[step    85] [INFO   ] Arrivo schedulato: P025 ammesso in B1 (arrival_step=85)
+[step    90] [INFO   ] Completamento P024 in B_rame: attesa=0, attraversamento=10 (totale=10 passi)
+[step    95] [INFO   ] Completamento P025 in B_Alacciaio: attesa=0, attraversamento=10 (totale=10 passi)
+[step   100] [INFO   ] Fine simulazione: completati=25, ancora in coda (pending)=0, arrivi schedulati non entrati=0
+
+=== LOG EVENTI (riepilogo) ===
+  INFO:    58
+  WARNING: 0
+  ERROR:   0

@@ -1,0 +1,50 @@
+
+=== STATISTICHE ===
+
+-- Tempo --
+  Tempo totale di simulazione: 100 passi
+
+-- Occupazione buffer (media/massima nel tempo, su tutti i campioni raccolti) --
+  B1               media=  0.1%  massima=  3%  campioni=100   blocchi=0
+  B2               media=  0.0%  massima=  1%  campioni=100   blocchi=0
+  B_Alacciaio      media=  7.6%  massima= 16%  campioni=100   blocchi=0
+  B_riqualifica    media=  3.0%  massima=  5%  campioni=100   blocchi=0
+  B_TRASH          media=  1.7%  massima=  3%  campioni=100   blocchi=0
+  B_rame           media=  8.7%  massima= 16%  campioni=100   blocchi=0
+
+-- Motori (tempo cumulativo ON/OFF, in passi di simulazione) --
+  N1       ON=75    OFF=25    totale=100
+  M        ON=75    OFF=25    totale=100
+
+-- Sensori di qualità (per ISP monitorata) --
+  ISP1     letture=25   anomalie=0    step_bloccata_per_guasto=0     CONFORME=23 RIVALUTAZIONE=1 SCARTO=1  materiale A=11 B=10 non_classificato=4
+  ISP2     letture=25   anomalie=0    step_bloccata_per_guasto=0     CONFORME=21 RIVALUTAZIONE=2 SCARTO=2  materiale A=10 B=10 non_classificato=5
+
+-- Sensori di presenza (per ID monitorato) --
+  B1       letture=50    rilevamenti (nuovi arrivi distinti)=25
+
+-- Tempo in sistema e completamento, per classe di priorita' --
+   (SISTEMA = coda di ingresso + pipeline; PROCESSO = solo pipeline, ESCLUSA la coda)
+  priorita'  0: completati=1     tempo SISTEMA(min/media/max)=13/13.0/13  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.0 + PROCESSO=13.0 = 13.0  |  PROCESSO(min/max)=13/13  entro scadenza(PROCESSO)=100%
+  priorita'  1: completati=2     tempo SISTEMA(min/media/max)=9/11.0/13  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.0 + PROCESSO=11.0 = 11.0  |  PROCESSO(min/max)=9/13  entro scadenza(PROCESSO)=100%
+  priorita'  2: completati=3     tempo SISTEMA(min/media/max)=10/13.0/16  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.7 + PROCESSO=12.3 = 13.0  |  PROCESSO(min/max)=10/15  entro scadenza(PROCESSO)=100%
+  priorita'  3: completati=2     tempo SISTEMA(min/media/max)=13/14.5/16  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.5 + PROCESSO=14.0 = 14.5  |  PROCESSO(min/max)=13/15  entro scadenza(PROCESSO)=100%
+  priorita'  4: completati=2     tempo SISTEMA(min/media/max)=10/12.5/15  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.5 + PROCESSO=12.0 = 12.5  |  PROCESSO(min/max)=10/14  entro scadenza(PROCESSO)=100%
+  priorita'  5: completati=3     tempo SISTEMA(min/media/max)=10/11.3/13  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.0 + PROCESSO=11.3 = 11.3  |  PROCESSO(min/max)=10/13  entro scadenza(PROCESSO)=100%
+  priorita'  6: completati=2     tempo SISTEMA(min/media/max)=13/13.5/14  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.0 + PROCESSO=13.5 = 13.5  |  PROCESSO(min/max)=13/14  entro scadenza(PROCESSO)=100%
+  priorita'  7: completati=2     tempo SISTEMA(min/media/max)=10/13.0/16  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=1.0 + PROCESSO=12.0 = 13.0  |  PROCESSO(min/max)=10/14  entro scadenza(PROCESSO)=100%
+  priorita'  8: completati=3     tempo SISTEMA(min/media/max)=8/10.3/13  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.0 + PROCESSO=10.3 = 10.3  |  PROCESSO(min/max)=8/13  entro scadenza(PROCESSO)=100%
+  priorita'  9: completati=3     tempo SISTEMA(min/media/max)=10/12.3/14  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.0 + PROCESSO=12.3 = 12.3  |  PROCESSO(min/max)=10/14  entro scadenza(PROCESSO)=100%
+  priorita' 10: completati=2     tempo SISTEMA(min/media/max)=8/12.0/16  entro scadenza(SISTEMA)=100%
+                 di cui (media): attesa in coda=0.5 + PROCESSO=11.5 = 12.0  |  PROCESSO(min/max)=8/15  entro scadenza(PROCESSO)=100%
+  TOTALE completati (con tempo in sistema registrato): 25
