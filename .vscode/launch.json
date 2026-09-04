@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug main (scenario nominale, layout1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/programma.exe",
+      "args": [ "plant_config_layout1.txt", "-", "scenario_nominale_layout1.txt" ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "preLaunchTask": "build main"
+    },
+    {
+      "name": "Debug main (scenario difficile, layout1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/programma.exe",
+      "args": [ "plant_config_layout1.txt", "-", "scenario_difficile_layout1.txt" ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "preLaunchTask": "build main"
+    },
+    {
+      "name": "Debug main (file oggetti B1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/programma.exe",
+      "args": [ "plant_config_layout1.txt", "oggetti_esempio.txt", "scenario_nominale_layout1.txt" ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "preLaunchTask": "build main"
+    },
+    {
+      "name": "Debug main (file oggetti B1+B2)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/programma.exe",
+      "args": [ "plant_config_layout1.txt", "oggetti_esempio.txt", "scenario_nominale_layout1.txt", "oggetti_b2_esempio.txt" ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "preLaunchTask": "build main"
+    }
+  ]
+}
