@@ -38,7 +38,7 @@ typedef enum {
                          *   fallita...). */
 } LogLivello;
 
-typedef struct log log_t;
+typedef struct log log_t;//puntatore opaco//
 
 /**
  * @brief Crea un log e apre il file indicato in scrittura (sovrascrive
