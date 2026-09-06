@@ -1,7 +1,7 @@
 #!/bin/bash
 # Compila e lancia tutti i test Unity del progetto (uno per file test_*.c),
-# con gli stessi flag/include del build.sh principale. Va lanciato dalla
-# ROOT del progetto (stessa cartella di build.sh), non da dentro test/:
+# con gli stessi flag/include usati per compilare il main. Va lanciato dalla
+# ROOT del progetto (dove stanno main.c e gli altri sorgenti), non da dentro test/:
 #   ./test/run_tests.sh
 #
 # Ogni file test_*.c e' un eseguibile Unity indipendente (con il proprio
