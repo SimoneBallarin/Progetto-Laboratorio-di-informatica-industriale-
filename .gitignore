@@ -24,3 +24,4 @@ confronto_strategie.txt
 
 # macOS
 .DS_Store
+*.dSYM/
