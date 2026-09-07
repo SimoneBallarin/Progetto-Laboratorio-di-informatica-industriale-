@@ -9,9 +9,10 @@ Uso:
     ctest --test-dir build_cmake --output-on-failure
     # lancia tutti i test Unity registrati sotto test/ (equivalente a test/run_tests.sh)
 
-Struttura del progetto: tutti i moduli (.c/.h) nella cartella principale,
-nessuna sottocartella lib/ o app/ - vedi test/run_tests.sh per la stessa
-convenzione (-I. come unico include).
+Struttura del progetto: moduli sotto lib/<Modulo>/, eseguibile principale
+in app/main.c - vedi test/run_tests.sh per la stessa convenzione di
+include (una -I per ciascuna sottocartella di lib/ con un header, vedi
+LIB_INCLUDE_DIRS).
 #]]
 
 cmake_minimum_required(VERSION 3.16)
@@ -35,27 +36,46 @@ add_compile_options(-Wall -Wextra)
 # ------------------------------------------------------------------
 
 set(LIB_SOURCES
-    object.c
-    idlist.c
-    registry.c
-    buffer.c
-    cell.c
-    nastro.c
-    machine.c
-    isp.c
-    Motore.c
-    Deviatore.c
-    S_Presenza.c
-    S_Buffer.c
-    S_Qualita.c
-    Controllore.c
-    parser.c
-    statistiche.c
-    log.c
+    lib/Oggetto/object.c
+    lib/Idlist/idlist.c
+    lib/Registry/registry.c
+    lib/Buffer/buffer.c
+    lib/Cella/cell.c
+    lib/Nastro/nastro.c
+    lib/Macchina/machine.c
+    lib/Isp/isp.c
+    lib/Attuatori/Motore/Motore.c
+    lib/Attuatori/Deviatore/Deviatore.c
+    "lib/Sensori/Sensore Presenza/S_Presenza.c"
+    "lib/Sensori/Sensore Buffer/S_Buffer.c"
+    "lib/Sensori/Sensore Qualita/S_Qualita.c"
+    lib/Controllore/Controllore.c
+    lib/Parser/parser.c
+    lib/Statistiche/statistiche.c
+    lib/log/log.c
 )
 
+# Ogni header e' incluso in forma "flat" (es. #include "object.h"), quindi
+# ogni sottocartella di lib/ che contiene un .h deve comparire qui.
 set(LIB_INCLUDE_DIRS
-    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/lib/Oggetto
+    ${CMAKE_SOURCE_DIR}/lib/Idlist
+    ${CMAKE_SOURCE_DIR}/lib/Registry
+    ${CMAKE_SOURCE_DIR}/lib/Buffer
+    ${CMAKE_SOURCE_DIR}/lib/Cella
+    ${CMAKE_SOURCE_DIR}/lib/Nastro
+    ${CMAKE_SOURCE_DIR}/lib/Macchina
+    ${CMAKE_SOURCE_DIR}/lib/Isp
+    ${CMAKE_SOURCE_DIR}/lib/Attuatori/Motore
+    ${CMAKE_SOURCE_DIR}/lib/Attuatori/Deviatore
+    "${CMAKE_SOURCE_DIR}/lib/Sensori/Sensore Presenza"
+    "${CMAKE_SOURCE_DIR}/lib/Sensori/Sensore Buffer"
+    "${CMAKE_SOURCE_DIR}/lib/Sensori/Sensore Qualita"
+    ${CMAKE_SOURCE_DIR}/lib/Controllore
+    ${CMAKE_SOURCE_DIR}/lib/Parser
+    ${CMAKE_SOURCE_DIR}/lib/Statistiche
+    ${CMAKE_SOURCE_DIR}/lib/log
+    ${CMAKE_SOURCE_DIR}/lib/Errori
 )
 
 # Libreria statica interna: cosi' sia l'eseguibile principale sia ogni
@@ -69,7 +89,7 @@ target_link_libraries(cella_lib PUBLIC m)   # -lm: usata da statistiche/macchina
 # Eseguibile principale (equivalente a main.c compilato da build.sh/VSCode)
 # ------------------------------------------------------------------
 
-add_executable(main main.c)
+add_executable(main app/main.c)
 target_link_libraries(main PRIVATE cella_lib)
 
 # ------------------------------------------------------------------
@@ -89,7 +109,7 @@ foreach(TEST_SRC ${UNITY_TEST_SOURCES})
     target_link_libraries(${TEST_NAME} PRIVATE unity cella_lib)
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     # I test leggono file con percorsi RELATIVI (es. "test/fixtures/...",
-    # "plant_config_valid.txt"), assumendo di essere lanciati dalla root
-    # del progetto - stessa convenzione di test/run_tests.sh.
+    # "Config/Layout/plant_config_layout1.txt"), assumendo di essere lanciati
+    # dalla root del progetto - stessa convenzione di test/run_tests.sh.
     set_tests_properties(${TEST_NAME} PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endforeach()
