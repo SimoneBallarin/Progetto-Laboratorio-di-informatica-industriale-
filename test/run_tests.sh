@@ -1,7 +1,8 @@
 #!/bin/bash
 # Compila e lancia tutti i test Unity del progetto (uno per file test_*.c),
 # con gli stessi flag/include usati per compilare il main. Va lanciato dalla
-# ROOT del progetto (dove stanno main.c e gli altri sorgenti), non da dentro test/:
+# ROOT del progetto (dove sta la cartella app/ e le altre sottocartelle),
+# non da dentro test/:
 #   ./test/run_tests.sh
 #
 # Ogni file test_*.c e' un eseguibile Unity indipendente (con il proprio
@@ -10,10 +11,22 @@
 # di test non impedisce agli altri di girare.
 set -u
 
-INCLUDES="-I. -Itest/unity"
+# Ogni header e' incluso in forma "flat" (es. #include "object.h"), quindi
+# serve una -I per ciascuna sottocartella di lib/ che contiene un .h.
+INCLUDES="-Itest/unity \
+  -Ilib/Oggetto -Ilib/Idlist -Ilib/Registry -Ilib/Buffer -Ilib/Cella \
+  -Ilib/Nastro -Ilib/Macchina -Ilib/Isp -Ilib/Attuatori/Motore \
+  -Ilib/Attuatori/Deviatore -Ilib/Controllore -Ilib/Parser -Ilib/Statistiche \
+  -Ilib/log -Ilib/Errori \
+  -I\"lib/Sensori/Sensore Presenza\" -I\"lib/Sensori/Sensore Buffer\" \
+  -I\"lib/Sensori/Sensore Qualita\""
 
-SRCS_COMUNI="Controllore.c Deviatore.c Motore.c S_Buffer.c S_Presenza.c S_Qualita.c \
-  buffer.c cell.c idlist.c isp.c log.c machine.c nastro.c object.c parser.c registry.c statistiche.c"
+SRCS_COMUNI="lib/Controllore/Controllore.c lib/Attuatori/Deviatore/Deviatore.c \
+  lib/Attuatori/Motore/Motore.c \"lib/Sensori/Sensore Buffer/S_Buffer.c\" \
+  \"lib/Sensori/Sensore Presenza/S_Presenza.c\" \"lib/Sensori/Sensore Qualita/S_Qualita.c\" \
+  lib/Buffer/buffer.c lib/Cella/cell.c lib/Idlist/idlist.c lib/Isp/isp.c \
+  lib/log/log.c lib/Macchina/machine.c lib/Nastro/nastro.c lib/Oggetto/object.c \
+  lib/Parser/parser.c lib/Registry/registry.c lib/Statistiche/statistiche.c"
 mkdir -p test/build
 
 FALLITI=0
