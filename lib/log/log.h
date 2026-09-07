@@ -1,10 +1,7 @@
 /**
  * @file log.h
  * @brief Modulo "log": registra su file (ed eventualmente anche su
- *        stdout) gli eventi rilevanti della simulazione - sez. 2.2 del
- *        progetto preliminare ("log degli eventi rilevanti" aggiornato
- *        ad ogni passo) e sez. 7 (errori di parsing "riportati nel
- *        log").
+ *        stdout) gli eventi rilevanti della simulazione.
  *
  * Stesso schema del resto del progetto: creazione, uso tramite
  * puntatore opaco, distruzione (vedi statistiche.h/Controllore.h). Non
@@ -36,9 +33,10 @@ typedef enum {
     LOG_ERROR   = 2   /**< Errore che impedisce un'operazione (file di
                          *   configurazione non apribile, allocazione
                          *   fallita...). */
+                      
 } LogLivello;
 
-typedef struct log log_t;//puntatore opaco//
+typedef struct log log_t; //  puntatore opaco //
 
 /**
  * @brief Crea un log e apre il file indicato in scrittura (sovrascrive
@@ -46,8 +44,7 @@ typedef struct log log_t;//puntatore opaco//
  * @param path Percorso del file di log (non deve essere NULL).
  * @param anche_su_stdout Se true, ogni evento registrato viene anche
  *        stampato su stdout oltre che scritto sul file (utile in fase
- *        di sviluppo; in una run "pulita" conviene false e leggere solo
- *        il file).
+ *        di sviluppo.
  * @param errCode puntatore opzionale (puo' essere NULL) in cui viene
  *        scritto OP_SUCCESS oppure un codice ERR_* (vedi errors.h):
  *        ERR_NULL_PTR se path e' NULL, ERR_NOT_FOUND se il file non e'
@@ -55,8 +52,7 @@ typedef struct log log_t;//puntatore opaco//
  *        l'allocazione fallisce.
  * @return Puntatore al log allocato, o NULL in caso di errore.
  */
-log_t *log_create( const char *path, bool anche_su_stdout, short int *errCode );
-
+log_t *log_create( const char *path, bool anche_su_stdout, short int *errCode ); 
 /**
  * @brief Chiude il file di log e libera la memoria. Puo' essere
  *        chiamata con l == NULL (non fa nulla), cosi' come le altre
@@ -64,7 +60,6 @@ log_t *log_create( const char *path, bool anche_su_stdout, short int *errCode );
  * @param l Puntatore al log.
  */
 void log_destroy( log_t *l );
-
 /**
  * @brief Registra un evento nel log, con lo step di simulazione e il
  *        livello di gravita' indicati. Formato della riga scritta:
@@ -81,10 +76,9 @@ void log_destroy( log_t *l );
  * @param formato Stringa di formato in stile printf.
  * @param ... Argomenti variabili, come in printf.
  */
-void log_evento( log_t *l, int step, LogLivello livello, const char *formato, ... );
-
+void log_evento( log_t *l, int step, LogLivello livello, const char *formato, ... ); 
 /**
- * @brief Numero di eventi registrati finora per un dato livello.
+ * @brief Numero di eventi registrati finora per un dato livello(quanti INFO, quanti WARNING, quanti ERROR).
  * @param l Puntatore al log.
  * @param livello Livello di gravita'.
  * @return Numero di eventi, ERR_NULL_PTR se l e' NULL, ERR_OUT_OF_RANGE
@@ -106,5 +100,4 @@ long log_getContatore( const log_t *l, LogLivello livello );
  *        strategie in app/main.c, dove solo la prima run stampa a schermo).
  */
 void log_stampaRiepilogo( const log_t *l, bool anche_su_stdout );
-
 #endif /* LOG_H */

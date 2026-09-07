@@ -33,7 +33,8 @@
 #include "Controllore.h"
 #include <stdbool.h>
 
-typedef struct statistiche statistiche_t;
+typedef struct statistiche statistiche_t;//puntatore opaco//
+
 
 /**
  * @brief Crea una statistiche_t vuota, senza nessun buffer/motore

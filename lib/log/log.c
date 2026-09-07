@@ -2,20 +2,26 @@
  * @file log.c
  * @brief Implementazione del modulo log.
  */
-
+//  qui dentro c'è il "come funziona davvero" del log. In
+// log.h avevo detto solo "cosa fanno" le funzioni; qui c'è il codice
+// vero che le fa funzionare.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 
 #include "log.h"
 
-struct log {
+struct log {//  questo è il contenuto VERO di "log_t", quello che in
+// log.h avevo nascosto (puntatore opaco). Solo questo file lo vede.
+
     FILE *fp;
     bool anche_su_stdout;
     long contatori[3];   /**< Indicizzato da LogLivello (LOG_INFO/WARNING/ERROR). */
 };
 
-static const char *nomeLivello( LogLivello livello )
+static const char *nomeLivello( LogLivello livello ) // piccola funzione di appoggio. Prende il livello (che è
+// solo un numero: 0, 1 o 2) e restituisce la scritta giusta da
+// mettere nel file ("INFO", "WARNING", "ERROR"), 
 {
     switch ( livello ) {
         case LOG_INFO:    return "INFO   ";
@@ -25,7 +31,10 @@ static const char *nomeLivello( LogLivello livello )
     }
 }
 
-log_t *log_create( const char *path, bool anche_su_stdout, short int *errCode )
+log_t *log_create( const char *path, bool anche_su_stdout, short int *errCode ) // : questa è la funzione che crea il log vero e proprio: apre
+// il file e prepara la memoria. Se qualcosa va storto (file non
+// apribile, memoria finita, path vuoto) ritorna NULL invece di far
+// crashare tutto.
 {
     log_t *l;
 
@@ -40,7 +49,11 @@ log_t *log_create( const char *path, bool anche_su_stdout, short int *errCode )
         return NULL;
     }
 
-    l->fp = fopen( path, "w" );
+    l->fp = fopen( path, "w" );     // N provo ad aprire davvero il file, in modalità  (scrittura): se il file esisteva già, viene svuotato e riscritto
+    // da zero - così ogni volta che lancio il programma ottengo un log pulito, senza roba vecchia mescolata dentro.
+    // Se fopen fallisce (es. percorso sbagliato, permessi mancanti),DEVO fare "free(l)" prima di uscire: quella memoria l'avevo già
+    // chiesta due righe sopra con malloc, e se non la libero resta "persa" per sempre finché il programma non chiude (si chiama
+    // memory leak, un errore che Valgrind scoprirebbe).
     if ( l->fp == NULL ) {
         free( l );
         if ( errCode != NULL ) { *errCode = ERR_NOT_FOUND; }
@@ -59,7 +72,9 @@ log_t *log_create( const char *path, bool anche_su_stdout, short int *errCode )
     return l;
 }
 
-void log_destroy( log_t *l )
+void log_destroy( log_t *l )//  questa "spegne" il log: chiude il file e libera la
+// memoria che avevo occupato con malloc in log_create. Va chiamata
+// una volta sola, alla fine, quando non mi serve più scrivere niente. Se "l" è già NULL, non faccio niente e non crasho 
 {
     if ( l == NULL ) {
         return;
@@ -74,7 +89,10 @@ void log_evento( log_t *l, int step, LogLivello livello, const char *formato, ..
 {
     va_list args;
 
-    if ( l == NULL || formato == NULL ) {
+    if ( l == NULL || formato == NULL ) {     // : se il log è NULL, o non mi hanno dato nessuna frase
+    // da scrivere, non faccio niente e esco subito, senza crashare.
+    // Questo mi permette di chiamare log_evento(log, ...) ovunque nel
+    // progetto senza dover controllare io ogni volta se il log esiste
         return;
     }
     if ( livello < LOG_INFO || livello > LOG_ERROR ) {
@@ -107,7 +125,11 @@ void log_evento( log_t *l, int step, LogLivello livello, const char *formato, ..
     }
 }
 
-long log_getContatore( const log_t *l, LogLivello livello )
+long log_getContatore( const log_t *l, LogLivello livello )//  questa mi dice quante volte ho registrato un certo
+// livello di evento finora. Prima controllo che "l" non sia NULL e
+// che "livello" sia uno valido, poi vado semplicemente a leggere il
+// numero dall'array contatori. Se uno dei controlli fallisce, torno
+// il codice di errore giusto invece del numero.
 {
     if ( l == NULL ) {
         return ERR_NULL_PTR;
@@ -118,7 +140,9 @@ long log_getContatore( const log_t *l, LogLivello livello )
     return l->contatori[livello];
 }
 
-void log_stampaRiepilogo( const log_t *l, bool anche_su_stdout )
+void log_stampaRiepilogo( const log_t *l, bool anche_su_stdout ) //  questa scrive un riepilogo finale con il totale di INFO,
+// WARNING ed ERROR registrati durante tutta la run. La chiamo una
+// volta sola, alla fine della simulazione.
 {
     if ( l == NULL ) {
         if ( anche_su_stdout ) {
