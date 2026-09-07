@@ -19,41 +19,41 @@ Flusso della cella (layout 1, default — vedi "Layout 2" più sotto per l'alter
 
 ## Struttura del progetto
 
-Tutti i moduli (`.c`/`.h`) si trovano direttamente nella cartella principale del
-repository, senza sottocartelle `lib/`/`app/`/`src/`: una scelta pensata per restare
-semplice con un progetto di queste dimensioni.
+I moduli (`.c`/`.h`) sono organizzati in sottocartelle sotto `lib/`, una per
+modulo/componente, con l'eseguibile principale in `app/` e i file di
+configurazione/scenario/oggetti in `Config/` (vedi albero sotto).
 
 ```
-main.c                    punto d'ingresso della simulazione
-Controllore.c/.h          orchestrazione: ammissione, instradamento, strategie di controllo
-cell.c/.h                 struttura della cella (buffer, nastri, macchine, ISP collegati)
-buffer.c/.h               buffer a capacità limitata (liste concatenate)
-nastro.c/.h               nastro trasportatore
-machine.c/.h              stazione di lavorazione (M)
-isp.c/.h                  stazione di controllo qualità
-Motore.c/.h               attuatore motore (nastri/macchine)
-Deviatore.c/.h            attuatore di smistamento (ISP a più uscite)
-S_Presenza.c/.h           sensore di presenza (arrivo in B1)
-S_Buffer.c/.h             sensore di livello buffer
-S_Qualita.c/.h            sensore di qualità (classificazione + guasto simulato)
-object.c/.h               oggetto/pezzo che attraversa la cella
-parser.c/.h               lettura dei file di configurazione/scenario/oggetti
-statistiche.c/.h          raccolta e stampa delle metriche di simulazione
-log.c/.h                  log eventi su file (ed eventualmente su stdout)
-registry.c/.h             registro globale delle entità (una sola cella per esecuzione)
-idlist.c/.h               lista concatenata generica di ID
-errors.h                  codici di errore condivisi
-test/                     test unitari Unity (vedi sotto)
-CMakeLists.txt            build alternativa via CMake (vedi sotto)
-plant_config_layout1.txt        configurazione impianto — layout 1 (default, vedi PDF sez. 1.1)
-plant_config_layout2.txt        configurazione impianto — layout 2 (vedi PDF sez. 1.1)
-scenario_nominale_layout1.txt   scenario nominale (nessun guasto) — layout 1 (default)
-scenario_nominale_layout2.txt   scenario nominale — layout 2
-scenario_difficile_layout1.txt  scenario con carico maggiore + guasto sensore qualità — layout 1
-scenario_difficile_layout2.txt  scenario con carico maggiore + guasto sensore qualità — layout 2
-scenario_doppio_guasto_layout1.txt  scenario con guasto simultaneo su ISP1 e ISP2 — layout 1
-oggetti_esempio.txt       file oggetti di esempio per il backlog di B1 (usato di default se presente)
-oggetti_b2_esempio.txt    file oggetti di esempio per il pre-caricamento di B2
+app/main.c                                         punto d'ingresso della simulazione
+lib/Controllore/Controllore.c/.h                   orchestrazione: ammissione, instradamento, strategie di controllo
+lib/Cella/cell.c/.h                                struttura della cella (buffer, nastri, macchine, ISP collegati)
+lib/Buffer/buffer.c/.h                             buffer a capacità limitata (liste concatenate)
+lib/Nastro/nastro.c/.h                             nastro trasportatore
+lib/Macchina/machine.c/.h                          stazione di lavorazione (M)
+lib/Isp/isp.c/.h                                   stazione di controllo qualità
+lib/Attuatori/Motore/Motore.c/.h                   attuatore motore (nastri/macchine)
+lib/Attuatori/Deviatore/Deviatore.c/.h             attuatore di smistamento (ISP a più uscite)
+lib/Sensori/Sensore Presenza/S_Presenza.c/.h       sensore di presenza (arrivo in B1)
+lib/Sensori/Sensore Buffer/S_Buffer.c/.h           sensore di livello buffer
+lib/Sensori/Sensore Qualita/S_Qualita.c/.h         sensore di qualità (classificazione + guasto simulato)
+lib/Oggetto/object.c/.h                            oggetto/pezzo che attraversa la cella
+lib/Parser/parser.c/.h                             lettura dei file di configurazione/scenario/oggetti
+lib/Statistiche/statistiche.c/.h                   raccolta e stampa delle metriche di simulazione
+lib/log/log.c/.h                                   log eventi su file (ed eventualmente su stdout)
+lib/Registry/registry.c/.h                         registro globale delle entità (una sola cella per esecuzione)
+lib/Idlist/idlist.c/.h                             lista concatenata generica di ID
+lib/Errori/errors.h                                codici di errore condivisi
+test/                                               test unitari Unity (vedi sotto)
+CMakeLists.txt                                      build alternativa via CMake (vedi sotto)
+Config/Layout/plant_config_layout1.txt             configurazione impianto — layout 1 (default, vedi PDF sez. 1.1)
+Config/Layout/plant_config_layout2.txt             configurazione impianto — layout 2 (vedi PDF sez. 1.1)
+Config/Scenari/scenario_nominale_layout1.txt       scenario nominale (nessun guasto) — layout 1 (default)
+Config/Scenari/scenario_nominale_layout2.txt       scenario nominale — layout 2
+Config/Scenari/scenario_difficile_layout1.txt      scenario con carico maggiore + guasto sensore qualità — layout 1
+Config/Scenari/scenario_difficile_layout2.txt      scenario con carico maggiore + guasto sensore qualità — layout 2
+Config/Scenari/scenario_doppio_guasto_layout1.txt  scenario con guasto simultaneo su ISP1 e ISP2 — layout 1
+Config/Oggetti/oggetti_esempio.txt                 file oggetti di esempio per il backlog di B1 (usato di default se presente)
+Config/Oggetti/oggetti_b2_esempio.txt              file oggetti di esempio per il pre-caricamento di B2
 ```
 
 ## Come compilare
@@ -61,13 +61,22 @@ oggetti_b2_esempio.txt    file oggetti di esempio per il pre-caricamento di B2
 Due modi equivalenti:
 
 **1. Compilazione diretta con gcc**, stessa convenzione usata da `test/run_tests.sh`
-(tutti i `.c` della cartella principale, include `-I.`):
+(una `-I` per ogni sottocartella di `lib/` con un header):
 
 ```bash
-gcc -g -Wall -Wextra -std=c11 -DUNITY_INCLUDE_DOUBLE -I. \
-    main.c Controllore.c Deviatore.c Motore.c S_Buffer.c S_Presenza.c S_Qualita.c \
-    buffer.c cell.c idlist.c isp.c log.c machine.c nastro.c object.c parser.c \
-    registry.c statistiche.c \
+gcc -g -Wall -Wextra -std=c11 -DUNITY_INCLUDE_DOUBLE \
+    -Ilib/Oggetto -Ilib/Idlist -Ilib/Registry -Ilib/Buffer -Ilib/Cella \
+    -Ilib/Nastro -Ilib/Macchina -Ilib/Isp -Ilib/Attuatori/Motore \
+    -Ilib/Attuatori/Deviatore -Ilib/Controllore -Ilib/Parser -Ilib/Statistiche \
+    -Ilib/log -Ilib/Errori \
+    -I"lib/Sensori/Sensore Presenza" -I"lib/Sensori/Sensore Buffer" \
+    -I"lib/Sensori/Sensore Qualita" \
+    app/main.c lib/Controllore/Controllore.c lib/Attuatori/Deviatore/Deviatore.c \
+    lib/Attuatori/Motore/Motore.c "lib/Sensori/Sensore Buffer/S_Buffer.c" \
+    "lib/Sensori/Sensore Presenza/S_Presenza.c" "lib/Sensori/Sensore Qualita/S_Qualita.c" \
+    lib/Buffer/buffer.c lib/Cella/cell.c lib/Idlist/idlist.c lib/Isp/isp.c \
+    lib/log/log.c lib/Macchina/machine.c lib/Nastro/nastro.c lib/Oggetto/object.c \
+    lib/Parser/parser.c lib/Registry/registry.c lib/Statistiche/statistiche.c \
     -o programma -lm
 ```
 
@@ -87,24 +96,24 @@ cmake --build build_cmake
 
 Tutti e quattro gli argomenti sono opzionali:
 
-- `config_path`: default `plant_config_layout1.txt`.
-- `oggetti_path`: **nessun default fisso** — se il file `oggetti_esempio.txt` esiste e non
+- `config_path`: default `Config/Layout/plant_config_layout1.txt`.
+- `oggetti_path`: **nessun default fisso** — se il file `Config/Oggetti/oggetti_esempio.txt` esiste e non
   hai passato un percorso esplicito, viene usato automaticamente (metodo primario). Se
   omesso e assente, o passato esplicitamente come `-`, gli arrivi in B1 sono generati
   casualmente (`SIM_PEZZI` pezzi, tutti a step 0, vedi il file di configurazione). Se
   specificato un file, i pezzi arrivano da quel file, ciascuno al proprio `ARRIVAL_STEP`.
-- `scenario_path`: default `scenario_nominale_layout1.txt`.
+- `scenario_path`: default `Config/Scenari/scenario_nominale_layout1.txt`.
 - `oggetti_b2_path`: **nessun default** — stesso meccanismo di `oggetti_path` ma per
   pre-caricare **B2** invece di B1. Se omesso, ricade su `SIM_PEZZI_B2` (generatore
   casuale, default `0` = nessuno).
 
 Esempi:
 ```bash
-./programma                                                                          # tutto default (layout 1)
-./programma plant_config_layout1.txt - scenario_difficile_layout1.txt                # solo scenario diverso
-./programma plant_config_layout1.txt oggetti_esempio.txt scenario_nominale_layout1.txt              # da file oggetti (B1)
-./programma plant_config_layout1.txt oggetti_esempio.txt scenario_nominale_layout1.txt oggetti_b2_esempio.txt  # da file oggetti (B1 + B2)
-./programma plant_config_layout2.txt oggetti_esempio.txt scenario_nominale_layout2.txt -             # layout 2 (vedi sez. dedicata sotto)
+./programma                                                                                                          # tutto default (layout 1)
+./programma Config/Layout/plant_config_layout1.txt - Config/Scenari/scenario_difficile_layout1.txt                  # solo scenario diverso
+./programma Config/Layout/plant_config_layout1.txt Config/Oggetti/oggetti_esempio.txt Config/Scenari/scenario_nominale_layout1.txt              # da file oggetti (B1)
+./programma Config/Layout/plant_config_layout1.txt Config/Oggetti/oggetti_esempio.txt Config/Scenari/scenario_nominale_layout1.txt Config/Oggetti/oggetti_b2_esempio.txt  # da file oggetti (B1 + B2)
+./programma Config/Layout/plant_config_layout2.txt Config/Oggetti/oggetti_esempio.txt Config/Scenari/scenario_nominale_layout2.txt -             # layout 2 (vedi sez. dedicata sotto)
 ```
 
 Ogni esecuzione fa **sempre**, in un solo comando:
@@ -327,7 +336,7 @@ layout 1):
   `SOGLIA_BUFFER`, `GEN_TARGET_DIMENSIONX`, `GEN_TARGET_RAGGIO`, `GEN_ERRORE_PCT`,
   `SCADENZA_STEP`): stessi nomi e stesso significato del layout 1, non ripetuti qui.
 
-Per lanciare il layout 2: `./programma plant_config_layout2.txt - scenario_nominale_layout2.txt`
+Per lanciare il layout 2: `./programma Config/Layout/plant_config_layout2.txt - Config/Scenari/scenario_nominale_layout2.txt`
 (o con un file oggetti esplicito, vedi esempi sopra).
 
 ## Limitazioni note
