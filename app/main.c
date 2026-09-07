@@ -59,22 +59,22 @@
  * MODALITA' D'USO (riga di comando, o argomento nel launch.json di VSCode):
  *   ./main.exe [config_path] [oggetti_path] [scenario_path] [oggetti_b2_path]
  *       Tutti opzionali:
- *         - config_path: default lib/parser/plant_config_layout1.txt
+ *         - config_path: default Config/Layout/plant_config_layout1.txt
  *         - oggetti_path: se omesso, si usa OGGETTI_PATH_DEFAULT quando
  *           quel file esiste (metodo primario); se non esiste, si
  *           ricade sul generatore casuale (SIM_PEZZI). Passando "-"
  *           esplicitamente si forza SEMPRE il generatore casuale, anche
  *           se il file di default esiste.
- *         - scenario_path: default lib/parser/scenario_nominale_layout1.txt
+ *         - scenario_path: default Config/Scenari/scenario_nominale_layout1.txt
  *         - oggetti_b2_path: stessa logica di oggetti_path, ma per B2
  *           e OGGETTI_B2_PATH_DEFAULT/SIM_PEZZI_B2.
  *       Esempi:
  *         ./main.exe
  *             config/scenario di default; oggetti da file di default se
  *             presenti, altrimenti arrivi casuali
- *         ./main.exe lib/parser/plant_config_layout1.txt - lib/parser/scenario_difficile_layout1.txt
+ *         ./main.exe Config/Layout/plant_config_layout1.txt - Config/Scenari/scenario_difficile_layout1.txt
  *             config esplicito, arrivi casuali forzati ("-"), scenario difficile
- *         ./main.exe lib/parser/plant_config_layout1.txt lib/parser/oggetti_esempio.txt
+ *         ./main.exe Config/Layout/plant_config_layout1.txt Config/Oggetti/oggetti_esempio.txt
  *             arrivi letti dal file oggetti indicato, scenario di default
  *
  *       OGNI esecuzione fa SEMPRE, in automatico, senza bisogno di
@@ -108,12 +108,12 @@
  * parametri di simulazione (SIM_STEPS/SIM_PEZZI/SOGLIA_BUFFER/
  * GEN_TARGET_DIMENSIONX/GEN_TARGET_RAGGIO/GEN_ERRORE_PCT). Prima erano
  * tutti #define fissi qui nel main: ora arrivano da qui. */
-#define CONFIG_PATH_DEFAULT  "plant_config_layout1.txt"
+#define CONFIG_PATH_DEFAULT  "Config/Layout/plant_config_layout1.txt"
 
 /* Percorso di default del file di scenario (sez. 7 della traccia: deve
  * poter cambiare "senza ricompilare il programma" - per questo e'
  * sovrascrivibile da riga di comando, vedi argv[] in main()). */
-#define SCENARIO_PATH_DEFAULT  "scenario_nominale_layout1.txt"
+#define SCENARIO_PATH_DEFAULT  "Config/Scenari/scenario_nominale_layout1.txt"
 
 /* Percorso di default del file oggetti per B1 (sez. 8/10 della traccia:
  * "almeno i file di configurazione, oggetti e scenario" da riga di
@@ -122,7 +122,7 @@
  * esplicito da riga di comando, viene usato automaticamente al posto
  * del generatore casuale storico (SIM_PEZZI). Se punti i tuoi file
  * oggetti altrove, aggiorna semplicemente questa define. */
-#define OGGETTI_PATH_DEFAULT "oggetti_esempio.txt"
+#define OGGETTI_PATH_DEFAULT "Config/Oggetti/oggetti_esempio.txt"
 
 /* Stessa logica di OGGETTI_PATH_DEFAULT sopra, ma per B2 (argv[4], vedi
  * main()) e SIM_PEZZI_B2. */
