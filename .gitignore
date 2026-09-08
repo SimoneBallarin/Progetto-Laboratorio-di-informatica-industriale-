@@ -13,6 +13,7 @@ test/build/
 *.o
 *.exe
 *.out
+*Zone.Identifier
 
 # File generati dalle run della simulazione (non vanno versionati:
 # cambiano ad ogni esecuzione e non fanno parte del codice sorgente)
